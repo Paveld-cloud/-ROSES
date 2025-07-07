@@ -74,7 +74,7 @@ def send_rose_card(chat_id, rose, rose_index):
     bot.send_chat_action(chat_id, 'upload_photo')
     time.sleep(1)
 
-  def send_rose_card(chat_id, rose, rose_index):
+def send_rose_card(chat_id, rose, rose_index):
     caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['price']}"
     photo_url = rose['photo']
 
