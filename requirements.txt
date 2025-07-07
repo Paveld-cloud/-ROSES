@@ -1,4 +1,0 @@
-pyTelegramBotAPI
-gspread
-python-dotenv
-google-auth
