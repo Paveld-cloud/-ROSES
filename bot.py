@@ -4,7 +4,7 @@ import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, BotCommand
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
 load_dotenv()
 
@@ -13,11 +13,6 @@ SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# Устанавливаем только команду start в меню Telegram
-bot.set_my_commands([
-    BotCommand("start", "🔁 Старт")
-])
 
 # Авторизация Google Sheets
 creds = Credentials.from_service_account_info(json.loads(creds_json), scopes=[
@@ -35,26 +30,6 @@ user_messages = {}
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     bot.send_message(message.chat.id, "🌸 Добро пожаловать! Введите название розы.", reply_markup=ReplyKeyboardRemove())
-
-@bot.message_handler(func=lambda m: m.text == "🧹 Очистить чат")
-def clear_user_chat(message):
-    user_id = message.chat.id
-    count = 0
-    if user_id in user_messages:
-        for msg_id in user_messages[user_id][-20:]:
-            try:
-                bot.delete_message(chat_id=user_id, message_id=msg_id)
-                count += 1
-            except Exception as e:
-                print(f"Не удалось удалить сообщение {msg_id}: {e}")
-        bot.send_message(user_id, f"🧹 Удалено {count} сообщений.", reply_markup=ReplyKeyboardRemove())
-        user_messages[user_id] = []
-    else:
-        bot.send_message(user_id, "❌ Нет сообщений для очистки.")
-
-@bot.message_handler(func=lambda m: m.text == "🔁 Старт")
-def handle_restart(message):
-    send_welcome(message)
 
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
