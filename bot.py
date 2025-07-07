@@ -74,13 +74,26 @@ def send_rose_card(chat_id, rose, rose_index):
     bot.send_chat_action(chat_id, 'upload_photo')
     time.sleep(1)
 
-    keyboard = InlineKeyboardMarkup()
-keyboard.add(
-    InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}"),
-    InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}")
-)
+  def send_rose_card(chat_id, rose, rose_index):
+    caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['price']}"
+    photo_url = rose['photo']
 
-    msg = bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+    bot.send_chat_action(chat_id, 'upload_photo')
+    time.sleep(1)
+
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(
+        InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}"),
+        InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}")
+    )
+
+    msg = bot.send_photo(
+        chat_id,
+        photo_url,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
 
     if chat_id in user_messages:
         user_messages[chat_id].append(msg.message_id)
