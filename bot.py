@@ -4,7 +4,7 @@ import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, BotCommand
 
 load_dotenv()
 
@@ -34,9 +34,7 @@ user_messages = {}
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(KeyboardButton("🔁 Старт"), KeyboardButton("🧹 Очистить чат"))
-    bot.send_message(message.chat.id, "🌸 Добро пожаловать! Введите название розы или нажмите одну из кнопок.", reply_markup=markup)
+    bot.send_message(message.chat.id, "🌸 Добро пожаловать! Введите название розы.", reply_markup=ReplyKeyboardRemove())
 
 @bot.message_handler(func=lambda m: m.text == "🧹 Очистить чат")
 def clear_user_chat(message):
