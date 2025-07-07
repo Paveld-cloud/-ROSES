@@ -14,11 +14,9 @@ creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Устанавливаем команды в меню Telegram
+# Устанавливаем только команду start в меню Telegram
 bot.set_my_commands([
-    BotCommand("start", "🔁 Старт"),
-    BotCommand("all", "Показать все розы"),
-    BotCommand("clear", "Очистить чат")
+    BotCommand("start", "🔁 Старт")
 ])
 
 # Авторизация Google Sheets
@@ -39,12 +37,6 @@ def send_welcome(message):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("🔁 Старт"), KeyboardButton("🧹 Очистить чат"))
     bot.send_message(message.chat.id, "🌸 Добро пожаловать! Введите название розы или нажмите одну из кнопок.", reply_markup=markup)
-
-@bot.message_handler(commands=['all'])
-def show_all_roses(message):
-    roses = get_roses()
-    for idx, rose in enumerate(roses):
-        send_rose_card(message.chat.id, rose, idx)
 
 @bot.message_handler(func=lambda m: m.text == "🧹 Очистить чат")
 def clear_user_chat(message):
