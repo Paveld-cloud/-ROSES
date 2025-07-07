@@ -4,7 +4,7 @@ import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 load_dotenv()
 
@@ -29,7 +29,9 @@ user_messages = {}
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.send_message(message.chat.id, "🌸 Введите название розы или используйте команду /all для отображения всех.")
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(KeyboardButton("🧹 Очистить чат"))
+    bot.send_message(message.chat.id, "🌸 Введите название розы или нажмите кнопку для очистки чата.", reply_markup=markup)
 
 @bot.message_handler(commands=['all'])
 def show_all_roses(message):
@@ -37,7 +39,7 @@ def show_all_roses(message):
     for idx, rose in enumerate(roses):
         send_rose_card(message.chat.id, rose, idx)
 
-@bot.message_handler(commands=['clear'])
+@bot.message_handler(func=lambda m: m.text == "🧹 Очистить чат")
 def clear_user_chat(message):
     user_id = message.chat.id
     count = 0
@@ -55,7 +57,6 @@ def clear_user_chat(message):
 
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
-    # Сохраняем ID сообщений пользователя
     user_id = message.chat.id
     if user_id not in user_messages:
         user_messages[user_id] = []
@@ -80,7 +81,6 @@ def send_rose_card(chat_id, rose, rose_index):
         InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}")
     )
     msg = bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
-    # Добавляем ID отправленного сообщения для возможной очистки
     if chat_id in user_messages:
         user_messages[chat_id].append(msg.message_id)
 
@@ -99,7 +99,6 @@ def handle_callback(call):
     elif action == "history":
         msg = bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Нет информации')}")
 
-    # Добавим и эти сообщения в список для очистки
     if call.message.chat.id in user_messages:
         user_messages[call.message.chat.id].append(msg.message_id)
 
