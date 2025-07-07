@@ -25,7 +25,7 @@ sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
 def get_roses():
     return sheet.get_all_records()
 
-# Храним последние сообщения
+# Храним ID сообщений
 user_messages = {}
 
 # Приветствие
@@ -108,11 +108,22 @@ def handle_callback(call):
     elif action == "history":
         msg = bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Нет информации')}")
     elif action == "video":
-        msg = bot.send_message(call.message.chat.id, f"📹 Видео:\n{rose.get('Видео', 'Нет видео')}")
+        video_data = rose.get('Видео', '')
+        if video_data.startswith("http"):
+            msg = bot.send_message(call.message.chat.id, f"📹 Видео:\n{video_data}")
+        elif len(video_data) > 10:  # file_id
+            msg = bot.send_video(call.message.chat.id, video_data, caption="📹 Видео")
+        else:
+            msg = bot.send_message(call.message.chat.id, "📹 Видео не указано")
     elif action == "description":
         msg = bot.send_message(call.message.chat.id, f"📦 Описание:\n{rose.get('Описание', 'Нет описания')}")
 
     if call.message.chat.id in user_messages:
         user_messages[call.message.chat.id].append(msg.message_id)
+
+# (Необязательно) получить file_id от загруженного видео
+@bot.message_handler(content_types=['video'])
+def get_file_id(message):
+    bot.send_message(message.chat.id, f"🎥 File ID:\n{message.video.file_id}")
 
 bot.infinity_polling()
