@@ -4,7 +4,7 @@ import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 load_dotenv()
 
@@ -24,9 +24,14 @@ sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
 def get_roses():
     return sheet.get_all_records()
 
+# Храним последние сообщения для очистки
+user_messages = {}
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.send_message(message.chat.id, "🌹 Добро пожаловать! Введите название розы или напишите /all для показа всех.")
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(KeyboardButton("🌹 Каталог роз"), KeyboardButton("🧹 Очистить"))
+    bot.send_message(message.chat.id, "🌸 Выберите действие:", reply_markup=markup)
 
 @bot.message_handler(commands=['all'])
 def show_all_roses(message):
@@ -35,6 +40,35 @@ def show_all_roses(message):
         send_rose_card(message.chat.id, rose, idx)
 
 @bot.message_handler(func=lambda m: True)
+def handle_all_messages(message):
+    # Сохраняем ID сообщений пользователя
+    user_id = message.chat.id
+    if user_id not in user_messages:
+        user_messages[user_id] = []
+    user_messages[user_id].append(message.message_id)
+
+    if message.text == "🌹 Каталог роз":
+        show_all_roses(message)
+    elif message.text == "🧹 Очистить":
+        clear_user_chat(message)
+    else:
+        search_rose(message)
+
+def clear_user_chat(message):
+    user_id = message.chat.id
+    count = 0
+    if user_id in user_messages:
+        for msg_id in user_messages[user_id][-20:]:
+            try:
+                bot.delete_message(chat_id=user_id, message_id=msg_id)
+                count += 1
+            except Exception as e:
+                print(f"Не удалось удалить сообщение {msg_id}: {e}")
+        bot.send_message(user_id, f"🧹 Удалено {count} сообщений.", reply_markup=ReplyKeyboardRemove())
+        user_messages[user_id] = []
+    else:
+        bot.send_message(user_id, "❌ Нет сообщений для очистки.")
+
 def search_rose(message):
     query = message.text.strip().lower()
     roses = get_roses()
