@@ -75,10 +75,10 @@ def send_rose_card(chat_id, rose, rose_index):
     time.sleep(1)
 
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}"),
-        InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}")
-    )
+keyboard.add(
+    InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}"),
+    InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}")
+)
 
     msg = bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
