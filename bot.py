@@ -28,7 +28,7 @@ def get_roses():
 # Храним последние сообщения для очистки
 user_messages = {}
 
-# Приветствие с typing-анимацией
+# Приветствие с анимацией typing
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     bot.send_chat_action(message.chat.id, 'typing')
@@ -63,36 +63,26 @@ def search_rose(message):
         if query in rose['Название'].lower():
             send_rose_card(message.chat.id, rose, idx)
             return
+    bot.send_chat_action(message.chat.id, 'typing')
+    time.sleep(1)
     bot.send_message(message.chat.id, "❌ Роза не найдена. Попробуйте другое название.")
 
 def send_rose_card(chat_id, rose, rose_index):
     caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['price']}"
     photo_url = rose['photo']
+
+    bot.send_chat_action(chat_id, 'upload_photo')
+    time.sleep(1)
+
     keyboard = InlineKeyboardMarkup()
     keyboard.add(
         InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}"),
         InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}")
     )
+
     msg = bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+
     if chat_id in user_messages:
         user_messages[chat_id].append(msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    action, idx = call.data.split('|', 1)
-    roses = get_roses()
-    try:
-        rose = roses[int(idx)]
-    except (IndexError, ValueError):
-        bot.answer_callback_query(call.id, "Роза не найдена")
-        return
-
-    if action == "care":
-        msg = bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Нет информации')}")
-    elif action == "history":
-        msg = bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Нет информации')}")
-
-    if call.message.chat.id in user_messages:
-        user_messages[call.message.chat.id].append(msg.message_id)
-
-bot.infinity_polling()
+@bot.callback_query_handler(func=lambda call: True
