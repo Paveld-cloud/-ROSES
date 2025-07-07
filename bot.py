@@ -5,7 +5,7 @@ import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 load_dotenv()
 
@@ -25,21 +25,19 @@ sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
 def get_roses():
     return sheet.get_all_records()
 
-# Храним последние сообщения для очистки
+# Храним последние сообщения
 user_messages = {}
 
-# Приветствие с анимацией typing
+# Приветствие
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     bot.send_chat_action(message.chat.id, 'typing')
     time.sleep(1.5)
-
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("🔁 Старт"))
-
     bot.send_message(
         message.chat.id,
-         "🌸 <b>Добро пожаловать!</b>\n\nВведите название розы для поиска.",
+        "🌸 <b>Добро пожаловать!</b>\n\nВведите название розы для поиска.",
         parse_mode='HTML',
         reply_markup=markup
     )
@@ -70,21 +68,15 @@ def search_rose(message):
 def send_rose_card(chat_id, rose, rose_index):
     caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['price']}"
     photo_url = rose['photo']
-
     bot.send_chat_action(chat_id, 'upload_photo')
     time.sleep(1)
 
-def send_rose_card(chat_id, rose, rose_index):
-    caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['price']}"
-    photo_url = rose['photo']
-
-    bot.send_chat_action(chat_id, 'upload_photo')
-    time.sleep(1)
-
-    keyboard = InlineKeyboardMarkup()
+    keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         InlineKeyboardButton("📜 История", callback_data=f"history|{rose_index}"),
-        InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}")
+        InlineKeyboardButton("🪴 Уход", callback_data=f"care|{rose_index}"),
+        InlineKeyboardButton("📹 Видео", callback_data=f"video|{rose_index}"),
+        InlineKeyboardButton("📦 Описание", callback_data=f"description|{rose_index}")
     )
 
     msg = bot.send_photo(
@@ -115,6 +107,10 @@ def handle_callback(call):
         msg = bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Нет информации')}")
     elif action == "history":
         msg = bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Нет информации')}")
+    elif action == "video":
+        msg = bot.send_message(call.message.chat.id, f"📹 Видео:\n{rose.get('Видео', 'Нет видео')}")
+    elif action == "description":
+        msg = bot.send_message(call.message.chat.id, f"📦 Описание:\n{rose.get('Описание', 'Нет описания')}")
 
     if call.message.chat.id in user_messages:
         user_messages[call.message.chat.id].append(msg.message_id)
