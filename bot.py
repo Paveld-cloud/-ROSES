@@ -86,4 +86,24 @@ def send_rose_card(chat_id, rose, rose_index):
         user_messages[chat_id].append(msg.message_id)
 
 @bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    action, idx = call.data.split('|', 1)
+    roses = get_roses()
+    try:
+        rose = roses[int(idx)]
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
 
+    bot.send_chat_action(call.message.chat.id, 'typing')
+    time.sleep(1)
+
+    if action == "care":
+        msg = bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Нет информации')}")
+    elif action == "history":
+        msg = bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Нет информации')}")
+
+    if call.message.chat.id in user_messages:
+        user_messages[call.message.chat.id].append(msg.message_id)
+
+bot.infinity_polling()
