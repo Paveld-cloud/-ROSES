@@ -81,3 +81,4 @@ def handle_callback(call):
 
 # Запуск бота
 bot.infinity_polling()
+
