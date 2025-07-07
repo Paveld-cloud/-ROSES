@@ -4,7 +4,7 @@ import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, BotCommand
 
 load_dotenv()
 
@@ -13,6 +13,13 @@ SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# Устанавливаем команды в меню Telegram
+bot.set_my_commands([
+    BotCommand("start", "🔁 Старт"),
+    BotCommand("all", "Показать все розы"),
+    BotCommand("clear", "Очистить чат")
+])
 
 # Авторизация Google Sheets
 creds = Credentials.from_service_account_info(json.loads(creds_json), scopes=[
@@ -30,8 +37,8 @@ user_messages = {}
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(KeyboardButton("🧹 Очистить чат"))
-    bot.send_message(message.chat.id, "🌸 Введите название розы или нажмите кнопку для очистки чата.", reply_markup=markup)
+    markup.add(KeyboardButton("🔁 Старт"), KeyboardButton("🧹 Очистить чат"))
+    bot.send_message(message.chat.id, "🌸 Добро пожаловать! Введите название розы или нажмите одну из кнопок.", reply_markup=markup)
 
 @bot.message_handler(commands=['all'])
 def show_all_roses(message):
@@ -54,6 +61,10 @@ def clear_user_chat(message):
         user_messages[user_id] = []
     else:
         bot.send_message(user_id, "❌ Нет сообщений для очистки.")
+
+@bot.message_handler(func=lambda m: m.text == "🔁 Старт")
+def handle_restart(message):
+    send_welcome(message)
 
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
