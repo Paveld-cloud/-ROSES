@@ -85,4 +85,5 @@ def send_rose_card(chat_id, rose, rose_index):
     if chat_id in user_messages:
         user_messages[chat_id].append(msg.message_id)
 
-@bot.callback_query_handler(func=lambda call: True
+@bot.callback_query_handler(func=lambda call: True)
+
