@@ -66,8 +66,8 @@ def search_rose(message):
     bot.send_message(message.chat.id, "❌ Роза не найдена. Попробуйте другое название.")
 
 def send_rose_card(chat_id, rose, rose_index):
-    caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['price']}"
-    photo_url = rose['photo']
+    caption = f"🌹 <b>{rose['Название']}</b>\n\n{rose['Цена']}"
+    photo_url = rose['Фото']
     bot.send_chat_action(chat_id, 'upload_photo')
     time.sleep(1)
 
