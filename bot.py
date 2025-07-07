@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import telebot
 import gspread
 from dotenv import load_dotenv
@@ -27,11 +28,21 @@ def get_roses():
 # Храним последние сообщения для очистки
 user_messages = {}
 
+# Приветствие с typing-анимацией
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    bot.send_chat_action(message.chat.id, 'typing')
+    time.sleep(1.5)
+
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("🔁 Старт"))
-    bot.send_message(message.chat.id, "🌸 Добро пожаловать! Введите название розы или нажмите старт.", reply_markup=markup)
+
+    bot.send_message(
+        message.chat.id,
+        "🌸 <b>Добро пожаловать!</b>\n\nВведите название розы или нажмите кнопку <b>Старт</b>.",
+        parse_mode='HTML',
+        reply_markup=markup
+    )
 
 @bot.message_handler(func=lambda m: m.text == "🔁 Старт")
 def handle_restart(message):
