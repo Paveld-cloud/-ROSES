@@ -113,4 +113,4 @@ def handle_callback(call):
     if call.message.chat.id in user_messages:
         user_messages[call.message.chat.id].append(msg.message_id)
 
-bot.infinity_polling() 
+bot.infinity_polling()
