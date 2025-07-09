@@ -187,6 +187,81 @@ def handle_back_to_catalog(call):
 
 # =============== Информация о розе ===============
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_", "video_", "description_")))
-def handle_rose_details(call
+def handle_rose_details(call):
+    action, idx, rose_type = call.data.split("_")
+    roses = [r for r in cached_roses if r.get('Тип') == rose_type]
+    if idx >= len(roses):
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
 
+    try:
+        rose = roses[int(idx)]
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
+
+    text = ""
+    if action == "care":
+        text = f"🪴 Уход:\n{rose.get('Уход', 'Нет информации.')}"
+    elif action == "history":
+        text = f"📜 История:\n{rose.get('История', 'Нет информации.')}"
+    elif action == "video":
+        video_data = rose.get('Видео', '')
+        if video_data.startswith("http"):
+            text = f"📹 Видео:\n{video_data}"
+        elif len(video_data) > 10:
+            bot.send_video(call.message.chat.id, video_data, caption="📹 Видео")
+            return
+        else:
+            text = "📹 Видео не указано"
+    elif action == "description":
+        text = f"📦 Описание:\n{rose.get('Описание', 'Нет описания.')}"
+
+    bot.send_message(call.message.chat.id, text)
+
+# =============== Обработка текста ===============
+@bot.message_handler(func=lambda m: True)
+def handle_all_messages(message):
+    logger.info(f"User {message.from_user.id} ({message.from_user.username}): {message.text}")
+    if message.text in ["🔎 Поиск", "❓ Помощь", "📦 Заказать", "📚 Каталог"]:
+        return  # Эти кнопки уже обработаны выше
+
+    delete_previous_messages(message.chat.id)
+    send_typing_action(message.chat.id)
+    query = message.text.strip().lower()
+    found = False
+    for idx, rose in enumerate(cached_roses):
+        if query in rose.get('Название', '').lower():
+            send_rose_card(message.chat.id, rose, idx)
+            found = True
+            break
+    if not found:
+        time.sleep(1)
+        msg = bot.send_message(message.chat.id, "❌ Роза не найдена. Попробуйте другое название.")
+        user_messages[message.chat.id].append(msg.message_id)
+
+def send_rose_card(chat_id, rose, idx):
+    caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n{rose.get('price', 'Цена не указана')}"
+    photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+    send_typing_action(chat_id)
+
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}_search"),
+        InlineKeyboardButton("📜 История", callback_data=f"history_{idx}_search"),
+        InlineKeyboardButton("📹 Видео", callback_data=f"video_{idx}_search"),
+        InlineKeyboardButton("📦 Описание", callback_data=f"description_{idx}_search"),
+        InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu")
+    )
+
+    msg = bot.send_photo(
+        chat_id,
+        photo_url,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    user_messages[chat_id].append(msg.message_id)
+
+# =============== Запуск бота ===============
 bot.infinity_polling()
