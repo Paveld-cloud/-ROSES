@@ -78,8 +78,7 @@ def send_help(message):
                      "Введите название розы, чтобы начать поиск.\n"
                      "Команды:\n"
                      "/start — перезапуск бота\n"
-                     "/help — помощь\n"
-                     "/refresh — обновить данные (только для администратора)")
+                     "/help — помощь")
 
 @bot.message_handler(commands=['refresh'])
 def refresh_data(message):
@@ -188,36 +187,36 @@ def handle_back_to_catalog(call):
 # =============== Информация о розе ===============
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_", "video_", "description_")))
 def handle_rose_details(call):
-    action, idx, rose_type = call.data.split("_")
-    roses = [r for r in cached_roses if r.get('Тип') == rose_type]
-    if idx >= len(roses):
-        bot.answer_callback_query(call.id, "Роза не найдена")
-        return
-
     try:
-        rose = roses[int(idx)]
-    except (IndexError, ValueError):
-        bot.answer_callback_query(call.id, "Роза не найдена")
-        return
+        action, idx, rose_type = call.data.split("_")
+        idx = int(idx)
 
-    text = ""
-    if action == "care":
-        text = f"🪴 Уход:\n{rose.get('Уход', 'Нет информации.')}"
-    elif action == "history":
-        text = f"📜 История:\n{rose.get('История', 'Нет информации.')}"
-    elif action == "video":
-        video_data = rose.get('Видео', '')
-        if video_data.startswith("http"):
-            text = f"📹 Видео:\n{video_data}"
-        elif len(video_data) > 10:
-            bot.send_video(call.message.chat.id, video_data, caption="📹 Видео")
-            return
+        if rose_type == "search":
+            rose = cached_roses[idx]
         else:
-            text = "📹 Видео не указано"
-    elif action == "description":
-        text = f"📦 Описание:\n{rose.get('Описание', 'Нет описания.')}"
+            filtered_roses = [r for r in cached_roses if r.get('Тип') == rose_type]
+            rose = filtered_roses[idx]
 
-    bot.send_message(call.message.chat.id, text)
+        if action == "care":
+            text = f"🪴 Уход:\n{rose.get('Уход', 'Не указано.')}"
+        elif action == "history":
+            text = f"📜 История:\n{rose.get('История', 'Не указана.')}"
+        elif action == "video":
+            video_data = rose.get('Видео', '')
+            if video_data.startswith("http"):
+                text = f"📹 Видео:\n{video_data}"
+            elif len(video_data) > 10:
+                bot.send_video(call.message.chat.id, video_data, caption="📹 Видео")
+                return
+            else:
+                text = "📹 Видео не указано"
+        elif action == "description":
+            text = f"📦 Описание:\n{rose.get('Описание', 'Не указано.')}"
+
+        bot.send_message(call.message.chat.id, text)
+    except Exception as e:
+        print(f"[ERROR] {e}")
+        bot.send_message(call.message.chat.id, "❌ Произошла ошибка при загрузке данных.")
 
 # =============== Обработка текста ===============
 @bot.message_handler(func=lambda m: True)
