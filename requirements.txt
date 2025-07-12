@@ -1,4 +1,5 @@
-pyTelegramBotAPI
-gspread
-python-dotenv
-google-auth
+python-telegram-bot==20.0
+Flask==2.3.3
+gspread==5.12.4
+google-auth==2.23.0
+python-dotenv==1.0.1
