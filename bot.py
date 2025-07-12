@@ -148,4 +148,6 @@ def handle_rose_details(call):
 
 # =============== Запуск сервера ===============
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+    port = int(os.environ.get("PORT", 8080))
+    logger.info(f"🚀 Запуск Flask на порту {port}")
+    app.run(host="0.0.0.0", port=port)
