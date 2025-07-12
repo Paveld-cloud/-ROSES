@@ -1,198 +1,283 @@
 import os
 import json
+import time
 import logging
 import telebot
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from functools import lru_cache
-from time import sleep
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger(__name__)
-
-# Константы
-SPREADSHEET_COLUMNS = {
-    'NAME': 'Название',
-    'DESCRIPTION': 'Описание',
-    'PRICE': 'Цена',
-    'PHOTO': 'Фото',
-    'CARE': 'Уход',
-    'HISTORY': 'История'
-}
-ROSES_PER_PAGE = 5  # Количество роз на одной странице
-
-# Загрузка переменных окружения
+# ================== Настройки ==================
 load_dotenv()
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
-CREDS_FILE = os.getenv("GOOGLE_CREDS_FILE", "credentials.json")
+creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
-# Проверка переменных окружения
-if not all([BOT_TOKEN, SPREADSHEET_URL, CREDS_FILE]):
-    logger.error("Отсутствуют обязательные переменные окружения")
-    raise ValueError("Необходимо задать BOT_TOKEN, SPREADSHEET_URL и GOOGLE_CREDS_FILE в .env")
+AUTHORIZED_USERS = [123456789]  # заменить на свой Telegram ID
 
-# Инициализация бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Настройка Google Sheets
-try:
-    creds = Credentials.from_service_account_file(
-        CREDS_FILE,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    )
-    gs = gspread.authorize(creds)
-    sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
-except Exception as e:
-    logger.error(f"Ошибка инициализации Google Sheets: {e}")
-    raise
+# ================ Логирование ==================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@lru_cache(maxsize=1)
-def get_roses():
-    """Получение и кэширование данных о розах из Google Sheets."""
+# =============== Авторизация Google Sheets ===============
+creds = Credentials.from_service_account_info(
+    json.loads(creds_json),
+    scopes=["https://www.googleapis.com/auth/spreadsheets.readonly "]
+)
+gs = gspread.authorize(creds)
+sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+
+cached_roses = []
+
+def refresh_cached_roses():
+    global cached_roses
     try:
-        data = sheet.get_all_records()
-        if not data:
-            logger.warning("Таблица пуста")
-            return []
-        return data
+        cached_roses = sheet.get_all_records()
+        logger.info("✅ Данные успешно загружены из Google Таблицы")
     except Exception as e:
-        logger.error(f"Ошибка получения данных: {e}")
-        return []
+        logger.error(f"❌ Ошибка при загрузке данных: {e}")
+        cached_roses = []
 
-def create_rose_card(rose):
-    """Создание карточки розы с кнопками."""
-    markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("🌿 Уход", callback_data=f"care_{rose[SPREADSHEET_COLUMNS['NAME']]}"),
-        InlineKeyboardButton("📖 История", callback_data=f"history_{rose[SPREADSHEET_COLUMNS['NAME']]}")
-    )
-    caption = (
-        f"<b>{rose[SPREADSHEET_COLUMNS['NAME']]}</b>\n"
-        f"{rose.get(SPREADSHEET_COLUMNS['DESCRIPTION'], '')}\n"
-        f"Цена: {rose[SPREADSHEET_COLUMNS['PRICE']]}"
-    )
-    return caption, markup
+refresh_cached_roses()
 
+# =============== Храним ID сообщений ===============
+user_messages = {}
+
+def delete_previous_messages(chat_id):
+    if chat_id in user_messages:
+        for msg_id in user_messages[chat_id]:
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception as e:
+                logger.warning(f"Не удалось удалить сообщение {msg_id}: {e}")
+        user_messages[chat_id] = []
+    else:
+        user_messages[chat_id] = []  # Создаём запись для нового пользователя
+
+def send_typing_action(chat_id):
+    bot.send_chat_action(chat_id, 'typing')
+    time.sleep(0.8)
+
+# =============== Команды ===============
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.send_message(
-        message.chat.id,
-        "🌹 Добро пожаловать! Введите название розы для поиска или /all для списка всех роз."
+    delete_previous_messages(message.chat.id)
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(KeyboardButton("🔎 Поиск"), KeyboardButton("📚 Каталог"))
+    markup.row(KeyboardButton("📦 Заказать"), KeyboardButton("❓ Помощь"))
+    msg = bot.send_message(message.chat.id, "🌸 <b>Добро пожаловать!</b>\n\nВыберите действие:", parse_mode='HTML', reply_markup=markup)
+    user_messages[message.chat.id].append(msg.message_id)
+
+@bot.message_handler(commands=['help'])
+def send_help(message):
+    bot.send_message(message.chat.id,
+                     "💬 Бот поможет найти информацию о розах.\n"
+                     "Введите название розы, чтобы начать поиск.\n"
+                     "Команды:\n"
+                     "/start — перезапуск бота\n"
+                     "/help — помощь\n"
+                     "/refresh — обновить данные (только для администратора)")
+
+@bot.message_handler(commands=['refresh'])
+def refresh_data(message):
+    if message.from_user.id not in AUTHORIZED_USERS:
+        bot.send_message(message.chat.id, "🚫 У вас нет доступа к этой команде.")
+        return
+    refresh_cached_roses()
+    bot.send_message(message.chat.id, "🔄 Данные обновлены!")
+
+# =============== Обработчики кнопок ===============
+@bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
+def handle_search(message):
+    delete_previous_messages(message.chat.id)
+    msg = bot.send_message(message.chat.id, "🔍 Введите название розы:")
+    user_messages[message.chat.id].append(msg.message_id)
+
+@bot.message_handler(func=lambda m: m.text == "❓ Помощь")
+def handle_help(message):
+    delete_previous_messages(message.chat.id)
+    msg = bot.send_message(message.chat.id, "📞 Свяжитесь с нами: @your_username")
+    user_messages[message.chat.id].append(msg.message_id)
+
+@bot.message_handler(func=lambda m: m.text == "📦 Заказать")
+def handle_order(message):
+    delete_previous_messages(message.chat.id)
+    msg = bot.send_message(message.chat.id, "🛒 Сейчас вы можете оставить заявку. Напишите, какие сорта вас интересуют.")
+    user_messages[message.chat.id].append(msg.message_id)
+
+@bot.message_handler(func=lambda m: m.text == "📚 Каталог")
+def handle_catalog(message):
+    delete_previous_messages(message.chat.id)
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    buttons = [
+        InlineKeyboardButton("Чайно-гибридные", callback_data="type_Чайно-гибридные"),
+        InlineKeyboardButton("Плетистые", callback_data="type_Плетистые"),
+        InlineKeyboardButton("Почвопокровные", callback_data="type_Почвопокровные"),
+        InlineKeyboardButton("Флорибунда", callback_data="type_Флорибунда"),
+        InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu")
+    ]
+    keyboard.add(*buttons)
+    msg = bot.send_message(message.chat.id, "📚 Выберите тип розы:", reply_markup=keyboard)
+    user_messages[message.chat.id].append(msg.message_id)
+
+# =============== Callbacks ===============
+@bot.callback_query_handler(func=lambda call: call.data.startswith("type_"))
+def handle_type(call):
+    rose_type = call.data.replace("type_", "")
+    roses = [r for r in cached_roses if r.get('Тип') == rose_type]
+    if not roses:
+        bot.answer_callback_query(call.id, "Нет роз этого типа")
+        return
+
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    for idx, rose in enumerate(roses):
+        keyboard.add(InlineKeyboardButton(rose.get('Название', 'Без названия'), callback_data=f"rose_{idx}_{rose_type}"))
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_catalog"))
+
+    bot.edit_message_text("🌼 Розы этого типа:", call.message.chat.id, call.message.message_id, reply_markup=keyboard)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rose_"))
+def handle_rose(call):
+    _, idx, rose_type = call.data.split("_")
+    idx = int(idx)
+    roses = [r for r in cached_roses if r.get('Тип') == rose_type]
+    if idx >= len(roses):
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
+
+    rose = roses[idx]
+    caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n{rose.get('price', 'Цена не указана')}"
+
+    photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}_{rose_type}"),
+        InlineKeyboardButton("📜 История", callback_data=f"history_{idx}_{rose_type}"),
+        InlineKeyboardButton("📹 Видео", callback_data=f"video_{idx}_{rose_type}"),
+        InlineKeyboardButton("📦 Описание", callback_data=f"description_{idx}_{rose_type}"),
+        InlineKeyboardButton("⬅️ Назад", callback_data=f"type_{rose_type}")
     )
 
-@bot.message_handler(commands=['all'])
-def show_all_roses(message):
-    roses = get_roses()
-    if not roses:
-        bot.send_message(message.chat.id, "🚫 Нет данных о розах.")
-        return
-
-    # Поддержка пагинации
     try:
-        page = int(message.text.split()[1]) if len(message.text.split()) > 1 else 1
-        total_pages = (len(roses) + ROSES_PER_PAGE - 1) // ROSES_PER_PAGE
-        if page < 1 or page > total_pages:
-            bot.send_message(message.chat.id, f"🚫 Неверная страница. Доступно: 1-{total_pages}")
-            return
-    except ValueError:
-        page = 1
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except:
+        pass
 
-    start_idx = (page - 1) * ROSES_PER_PAGE
-    end_idx = start_idx + ROSES_PER_PAGE
+    msg = bot.send_photo(
+        call.message.chat.id,
+        photo_url,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+    if call.message.chat.id not in user_messages:
+        user_messages[call.message.chat.id] = []
+    user_messages[call.message.chat.id].append(msg.message_id)
 
-    for rose in roses[start_idx:end_idx]:
-        try:
-            caption, markup = create_rose_card(rose)
-            bot.send_photo(
-                message.chat.id,
-                photo=rose[SPREADSHEET_COLUMNS['PHOTO']],
-                caption=caption,
-                parse_mode='HTML',
-                reply_markup=markup
-            )
-            sleep(0.5)  # Защита от ограничений Telegram
-        except Exception as e:
-            logger.error(f"Ошибка отправки розы {rose[SPREADSHEET_COLUMNS['NAME']]}: {e}")
-            bot.send_message(message.chat.id, f"Ошибка при отправке розы {rose[SPREADSHEET_COLUMNS['NAME']]}")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("back_to_menu"))
+def handle_back_to_menu(call):
+    delete_previous_messages(call.message.chat.id)
+    send_welcome(call.message)
 
-    if total_pages > 1:
-        bot.send_message(
-            message.chat.id,
-            f"Страница {page} из {total_pages}. Для других страниц: /all <номер_страницы>"
-        )
+@bot.callback_query_handler(func=lambda call: call.data.startswith("back_to_catalog"))
+def handle_back_to_catalog(call):
+    handle_catalog(call.message)
 
-@bot.message_handler(func=lambda m: True)
-def search_rose(message):
-    query = message.text.strip().lower()
-    roses = get_roses()
-    if not roses:
-        bot.send_message(message.chat.id, "🚫 Нет данных о розах.")
-        return
-
-    # Частичный поиск
-    matches = [rose for rose in roses if query in rose[SPREADSHEET_COLUMNS['NAME']].lower()]
-    if not matches:
-        bot.send_message(message.chat.id, "🚫 Роза не найдена.")
-        return
-
-    for rose in matches[:ROSES_PER_PAGE]:
-        try:
-            caption, markup = create_rose_card(rose)
-            bot.send_photo(
-                message.chat.id,
-                photo=rose[SPREADSHEET_COLUMNS['PHOTO']],
-                caption=caption,
-                parse_mode='HTML',
-                reply_markup=markup
-            )
-            sleep(0.5)
-        except Exception as e:
-            logger.error(f"Ошибка отправки розы {rose[SPREADSHEET_COLUMNS['NAME']]}: {e}")
-            bot.send_message(message.chat.id, f"Ошибка при отправке розы {rose[SPREADSHEET_COLUMNS['NAME']]}")
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    roses = get_roses()
-    if not roses:
-        bot.answer_callback_query(call.id, "Нет данных о розах")
-        return
-
+# =============== Информация о розе ===============
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_", "video_", "description_")))
+def handle_rose_details(call):
     try:
-        action, name = call.data.split('_', 1)
-        rose = next((r for r in roses if r[SPREADSHEET_COLUMNS['NAME']] == name), None)
-        if not rose:
-            bot.answer_callback_query(call.id, "Роза не найдена")
-            return
+        action, idx, rose_type = call.data.split("_")
+        idx = int(idx)
 
-        if action == 'care':
-            bot.send_message(
-                call.message.chat.id,
-                f"🌿 Уход за {name}:\n{rose[SPREADSHEET_COLUMNS['CARE']]}"
-            )
-            bot.answer_callback_query(call.id, "Информация об уходе отправлена")
-        elif action == 'history':
-            bot.send_message(
-                call.message.chat.id,
-                f"📖 История розы {name}:\n{rose[SPREADSHEET_COLUMNS['HISTORY']]}"
-            )
-            bot.answer_callback_query(call.id, "История розы отправлена")
+        if rose_type == "search":
+            rose = cached_roses[idx]
+        else:
+            filtered_roses = [r for r in cached_roses if r.get('Тип') == rose_type]
+            rose = filtered_roses[idx]
+
+        text = ""
+        if action == "care":
+            text = f"🪴 Уход:\n{rose.get('Уход', 'Нет информации.')}"
+        elif action == "history":
+            text = f"📜 История:\n{rose.get('История', 'Нет информации.')}"
+        elif action == "video":
+            video_data = rose.get('Видео', '')
+            if video_data.startswith("http"):
+                text = f"📹 Видео:\n{video_data}"
+            elif len(video_data) > 10:
+                bot.send_video(call.message.chat.id, video_data, caption="📹 Видео")
+                return
+            else:
+                text = "📹 Видео не указано"
+        elif action == "description":
+            text = f"📦 Описание:\n{rose.get('Описание', 'Нет описания.')}"
+
+        msg = bot.send_message(call.message.chat.id, text)
+        if call.message.chat.id not in user_messages:
+            user_messages[call.message.chat.id] = []
+        user_messages[call.message.chat.id].append(msg.message_id)
+
     except Exception as e:
-        logger.error(f"Ошибка обработки кнопки {call.data}: {e}")
-        bot.answer_callback_query(call.id, "Произошла ошибка")
+        logger.error(f"[ERROR] {e}")
+        bot.send_message(call.message.chat.id, "❌ Произошла ошибка при загрузке данных.")
 
-if __name__ == '__main__':
-    logger.info("Запуск бота...")
-    while True:
-        try:
-            bot.infinity_polling()
-        except Exception as e:
-            logger.error(f"Бот упал: {e}")
-            sleep(5)  # Перезапуск через 5 секунд
+# =============== Обработка текста ===============
+@bot.message_handler(func=lambda m: True)
+def handle_all_messages(message):
+    logger.info(f"User {message.from_user.id} ({message.from_user.username}): {message.text}")
+    if message.text in ["🔎 Поиск", "❓ Помощь", "📦 Заказать", "📚 Каталог"]:
+        return  # Эти кнопки уже обработаны выше
+
+    delete_previous_messages(message.chat.id)
+    send_typing_action(message.chat.id)
+    query = message.text.strip().lower()
+    found = False
+    for idx, rose in enumerate(cached_roses):
+        if query in rose.get('Название', '').lower():
+            send_rose_card(message.chat.id, rose, idx)
+            found = True
+            break
+    if not found:
+        time.sleep(1)
+        msg = bot.send_message(message.chat.id, "❌ Роза не найдена. Попробуйте другое название.")
+        if message.chat.id not in user_messages:
+            user_messages[message.chat.id] = []
+        user_messages[message.chat.id].append(msg.message_id)
+
+def send_rose_card(chat_id, rose, idx):
+    caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n{rose.get('price', 'Цена не указана')}"
+    photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+    send_typing_action(chat_id)
+
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}_search"),
+        InlineKeyboardButton("📜 История", callback_data=f"history_{idx}_search"),
+        InlineKeyboardButton("📹 Видео", callback_data=f"video_{idx}_search"),
+        InlineKeyboardButton("📦 Описание", callback_data=f"description_{idx}_search"),
+        InlineKeyboardButton("⬅️ Назад", callback_data="back_to_menu")
+    )
+
+    msg = bot.send_photo(
+        chat_id,
+        photo_url,
+        caption=caption,
+        parse_mode='HTML',
+        reply_markup=keyboard
+    )
+
+    # --- Защита от KeyError ---
+    if chat_id not in user_messages:
+        user_messages[chat_id] = []
+    # -------------------------------
+
+    user_messages[chat_id].append(msg.message_id)
+
+# =============== Запуск бота ===============
+bot.infinity_polling()
