@@ -4,20 +4,18 @@
     "nixpacksConfig": {
       "phases": {
         "setup": {
-          "nixPkgs": [
-            "python311",
-            "gcc"
-          ]
+          "nixPkgs": ["python311", "gcc", "make"]
         },
         "install": {
           "cmds": [
             "python -m venv /opt/venv",
             ". /opt/venv/bin/activate",
+            "pip install --upgrade pip",
             "pip install -r requirements.txt"
           ]
         },
         "start": {
-          "cmd": "python bot.py"
+          "cmd": ". /opt/venv/bin/activate && python bot.py"
         }
       }
     }
