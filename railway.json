@@ -4,14 +4,15 @@
     "nixpacksConfig": {
       "phases": {
         "setup": {
-          "nixPkgs": ["python311", "gcc", "make"]
+          "nixPkgs": ["python311", "gcc", "make", "libffi", "openssl"]
         },
         "install": {
           "cmds": [
             "python -m venv /opt/venv",
             ". /opt/venv/bin/activate",
             "pip install --upgrade pip",
-            "pip install -r requirements.txt"
+            "pip install python-telegram-bot==20.0 gspread Flask google-auth python-dotenv",
+            "pip install -r requirements.txt || echo 'requirements.txt не найден'"
           ]
         },
         "start": {
