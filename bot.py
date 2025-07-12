@@ -5,6 +5,7 @@ import telebot
 from flask import Flask, request
 from google.oauth2.service_account import Credentials
 import gspread
+import time
 
 # =============== Логирование ==================
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +31,7 @@ except Exception as e:
 try:
     creds = Credentials.from_service_account_info(
         CREDS_JSON,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly "]
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
     gs = gspread.authorize(creds)
     sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
@@ -55,12 +56,28 @@ refresh_cached_roses()
 
 # =============== Webhook endpoint ===============
 app = Flask(__name__)
+webhook_set = False  # Флаг для установки webhook'а
 
 @app.route('/telegram', methods=['POST'])
 def webhook():
     update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
     bot.process_new_updates([update])
     return '', 200
+
+# =============== Установка Webhook ===============
+@app.before_request
+def set_webhook_once():
+    global webhook_set
+    if not webhook_set:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            webhook_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", f"https://{request.host}/telegram")
+            bot.set_webhook(url=f"{webhook_url}/telegram")
+            logger.info(f"🌐 Webhook установлен: {webhook_url}/telegram")
+            webhook_set = True
+        except Exception as e:
+            logger.error(f"❌ Не удалось установить webhook: {e}")
 
 # =============== Команды бота ===============
 @bot.message_handler(commands=['start'])
@@ -103,7 +120,7 @@ def handle_type(call):
 
     for idx, rose in enumerate(roses[:5]):  # показываем максимум 5 роз
         caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n{rose.get('Описание', '')}\nЦена: {rose.get('price', '?')} руб"
-        photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+        photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
             telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}_{rose_type}"),
@@ -128,18 +145,6 @@ def handle_rose_details(call):
         bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
     elif action == "history":
         bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
-
-# =============== Установка Webhook ===============
-@app.before_first_request
-def set_webhook():
-    try:
-        bot.remove_webhook()
-        time.sleep(1)
-        webhook_url = os.getenv("RAILWAY_PUBLIC_DOMAIN") or f"https://{request.host}/telegram"
-        bot.set_webhook(url=f"{webhook_url}/telegram")
-        logger.info(f"🌐 Webhook установлен: {webhook_url}/telegram")
-    except Exception as e:
-        logger.error(f"❌ Не удалось установить webhook: {e}")
 
 # =============== Запуск сервера ===============
 if __name__ == '__main__':
