@@ -1,7 +1,5 @@
-{
-  "url": "https://roses-bot-production.up.railway.app/telegram ",
-  "has_custom_certificate": false,
-  "pending_update_count": 0,
-  "last_error_date": 0,
-  "max_connections": 40
-}
+python-telegram-bot==20.0
+gspread==5.12.4
+Flask==2.3.3
+google-auth==2.23.0
+python-dotenv==1.0.1
