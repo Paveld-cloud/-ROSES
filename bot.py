@@ -4,6 +4,7 @@ import time
 import logging
 import telebot
 import gspread
+
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
@@ -17,20 +18,33 @@ creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
 AUTHORIZED_USERS = [123456789]  # заменить на свой Telegram ID
 
-bot = telebot.TeleBot(BOT_TOKEN)
-
 # ================ Логирование ==================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# =============== Авторизация Google Sheets ===============
-creds = Credentials.from_service_account_info(
-    json.loads(creds_json),
-    scopes=["https://www.googleapis.com/auth/spreadsheets.readonly "]
-)
-gs = gspread.authorize(creds)
-sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+# =============== Инициализация бота ===============
+bot = telebot.TeleBot(BOT_TOKEN)
 
+# Удаляем старый webhook при запуске
+try:
+    bot.delete_webhook()
+    logger.info("🧹 Webhook удалён перед запуском polling")
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось удалить webhook: {e}")
+
+# =============== Авторизация Google Sheets ===============
+try:
+    creds = Credentials.from_service_account_info(
+        json.loads(creds_json),
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly "]
+    )
+    gs = gspread.authorize(creds)
+    sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+except Exception as e:
+    logger.error(f"❌ Ошибка инициализации Google Sheets: {e}")
+    raise
+
+# =============== Кэширование данных ===============
 cached_roses = []
 
 def refresh_cached_roses():
@@ -69,7 +83,12 @@ def send_welcome(message):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("🔎 Поиск"), KeyboardButton("📚 Каталог"))
     markup.row(KeyboardButton("📦 Заказать"), KeyboardButton("❓ Помощь"))
-    msg = bot.send_message(message.chat.id, "🌸 <b>Добро пожаловать!</b>\n\nВыберите действие:", parse_mode='HTML', reply_markup=markup)
+    msg = bot.send_message(message.chat.id,
+                           "🌸 <b>Добро пожаловать!</b>\n\nВыберите действие:",
+                           parse_mode='HTML',
+                           reply_markup=markup)
+    if message.chat.id not in user_messages:
+        user_messages[message.chat.id] = []
     user_messages[message.chat.id].append(msg.message_id)
 
 @bot.message_handler(commands=['help'])
@@ -138,7 +157,12 @@ def handle_type(call):
         keyboard.add(InlineKeyboardButton(rose.get('Название', 'Без названия'), callback_data=f"rose_{idx}_{rose_type}"))
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_catalog"))
 
-    bot.edit_message_text("🌼 Розы этого типа:", call.message.chat.id, call.message.message_id, reply_markup=keyboard)
+    try:
+        bot.edit_message_text("🌼 Розы этого типа:", call.message.chat.id, call.message.message_id, reply_markup=keyboard)
+    except Exception as e:
+        logger.warning(f"Ошибка редактирования сообщения: {e}")
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, "🌼 Розы этого типа:", reply_markup=keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("rose_"))
 def handle_rose(call):
@@ -203,9 +227,9 @@ def handle_rose_details(call):
 
         text = ""
         if action == "care":
-            text = f"🪴 Уход:\n{rose.get('Уход', 'Нет информации.')}"
+            text = f"🪴 Уход:\n{rose.get('Уход', 'Не указано.')}"
         elif action == "history":
-            text = f"📜 История:\n{rose.get('История', 'Нет информации.')}"
+            text = f"📜 История:\n{rose.get('История', 'Не указана.')}"
         elif action == "video":
             video_data = rose.get('Видео', '')
             if video_data.startswith("http"):
@@ -216,7 +240,7 @@ def handle_rose_details(call):
             else:
                 text = "📹 Видео не указано"
         elif action == "description":
-            text = f"📦 Описание:\n{rose.get('Описание', 'Нет описания.')}"
+            text = f"📦 Описание:\n{rose.get('Описание', 'Не указано.')}"
 
         msg = bot.send_message(call.message.chat.id, text)
         if call.message.chat.id not in user_messages:
@@ -272,12 +296,18 @@ def send_rose_card(chat_id, rose, idx):
         reply_markup=keyboard
     )
 
-    # --- Защита от KeyError ---
     if chat_id not in user_messages:
         user_messages[chat_id] = []
-    # -------------------------------
-
     user_messages[chat_id].append(msg.message_id)
 
-# =============== Запуск бота ===============
-bot.infinity_polling()
+# =============== Защита от дублирования ===============
+if __name__ == '__main__':
+    logger.info("🟢 Запуск бота в режиме polling...")
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            logger.error(f"⚠️ Ошибка polling: {e}")
+            logger.info("🔁 Перезапуск бота через 5 секунд...")
+            bot.stop_polling()
+            time.sleep(5)
