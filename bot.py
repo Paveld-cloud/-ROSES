@@ -4,7 +4,7 @@ import time
 import logging
 import telebot
 import gspread
-
+import requests  # Для Make.com
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
@@ -16,6 +16,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
 
+MAKE_COM_WEBHOOK_URL = os.getenv("MAKE_COM_WEBHOOK_URL")  # 🔥 Новая переменная
+
 AUTHORIZED_USERS = [123456789]  # заменить на свой Telegram ID
 
 # ================ Логирование ==================
@@ -23,7 +25,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # =============== Инициализация бота ===============
-bot = telebot.TeleBot(BOT_TOKEN)
+try:
+    bot = telebot.TeleBot(BOT_TOKEN)
+    logger.info("✅ Бот успешно инициализирован")
+except Exception as e:
+    logger.error(f"❌ Ошибка инициализации бота: {e}")
+    raise
 
 # Удаляем старый webhook при запуске
 try:
@@ -40,6 +47,7 @@ try:
     )
     gs = gspread.authorize(creds)
     sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+    logger.info("✅ Google Sheets успешно авторизованы")
 except Exception as e:
     logger.error(f"❌ Ошибка инициализации Google Sheets: {e}")
     raise
@@ -66,15 +74,19 @@ def delete_previous_messages(chat_id):
         for msg_id in user_messages[chat_id]:
             try:
                 bot.delete_message(chat_id, msg_id)
+                logger.info(f"🗑 Сообщение {msg_id} удалено")
             except Exception as e:
-                logger.warning(f"Не удалось удалить сообщение {msg_id}: {e}")
+                logger.warning(f"⚠️ Не удалось удалить сообщение {msg_id}: {e}")
         user_messages[chat_id] = []
     else:
         user_messages[chat_id] = []  # Создаём запись для нового пользователя
 
 def send_typing_action(chat_id):
-    bot.send_chat_action(chat_id, 'typing')
-    time.sleep(0.8)
+    try:
+        bot.send_chat_action(chat_id, 'typing')
+        time.sleep(0.8)
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка отправки typing action: {e}")
 
 # =============== Команды ===============
 @bot.message_handler(commands=['start'])
@@ -87,8 +99,6 @@ def send_welcome(message):
                            "🌸 <b>Добро пожаловать!</b>\n\nВыберите действие:",
                            parse_mode='HTML',
                            reply_markup=markup)
-    if message.chat.id not in user_messages:
-        user_messages[message.chat.id] = []
     user_messages[message.chat.id].append(msg.message_id)
 
 @bot.message_handler(commands=['help'])
@@ -189,8 +199,8 @@ def handle_rose(call):
 
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось удалить сообщение: {e}")
 
     msg = bot.send_photo(
         call.message.chat.id,
@@ -255,28 +265,59 @@ def handle_rose_details(call):
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
     logger.info(f"User {message.from_user.id} ({message.from_user.username}): {message.text}")
+    
     if message.text in ["🔎 Поиск", "❓ Помощь", "📦 Заказать", "📚 Каталог"]:
         return  # Эти кнопки уже обработаны выше
 
     delete_previous_messages(message.chat.id)
     send_typing_action(message.chat.id)
+
     query = message.text.strip().lower()
     found = False
+
     for idx, rose in enumerate(cached_roses):
         if query in rose.get('Название', '').lower():
             send_rose_card(message.chat.id, rose, idx)
             found = True
             break
+
     if not found:
         time.sleep(1)
         msg = bot.send_message(message.chat.id, "❌ Роза не найдена. Попробуйте другое название.")
-        if message.chat.id not in user_messages:
-            user_messages[message.chat.id] = []
         user_messages[message.chat.id].append(msg.message_id)
 
+    # 🔥 Отправляем заявку в Make.com
+    send_to_make_com(message)
+
+# =============== Отправка заявок в Make.com ===============
+def send_to_make_com(message):
+    if not MAKE_COM_WEBHOOK_URL:
+        logger.warning("❌ MAKE_COM_WEBHOOK_URL не задан")
+        return
+
+    payload = {
+        "chat_id": message.chat.id,
+        "username": message.from_user.username or "no_username",
+        "first_name": message.from_user.first_name or "Аноним",
+        "text": message.text,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    try:
+        response = requests.post(MAKE_COM_WEBHOOK_URL, json=payload)
+        if response.status_code == 200:
+            logger.info(f"📩 Заявка отправлена в Make.com: {payload}")
+        else:
+            logger.warning(f"⚠️ Ошибка отправки в Make.com: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка связи с Make.com: {e}")
+
+# =============== Карточка розы ===============
 def send_rose_card(chat_id, rose, idx):
     caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n{rose.get('price', 'Цена не указана')}"
+
     photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+
     send_typing_action(chat_id)
 
     keyboard = InlineKeyboardMarkup(row_width=2)
