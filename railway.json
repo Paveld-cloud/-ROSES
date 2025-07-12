@@ -9,15 +9,15 @@
         "install": {
           "cmds": [
             "python -m venv /opt/venv",
-            ". /opt/venv/bin/activate",
-            "pip install --no-cache-dir python-telegram-bot==20.0 gspread Flask google-auth python-dotenv",
-            "pip install --no-cache-dir -r requirements.txt || echo 'requirements.txt не найден'"
+            "source /opt/venv/bin/activate",
+            "pip install python-telegram-bot==20.0",
+            "pip install gspread Flask python-dotenv google-auth",
+            "pip list"
           ]
         },
         "start": {
-          "cmd": ". /opt/venv/bin/activate && cd /app && python bot.py"
+          "cmd": "cd /app && source /opt/venv/bin/activate && python bot.py"
         }
       }
     }
   }
-}
