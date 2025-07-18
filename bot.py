@@ -11,15 +11,14 @@ import urllib.parse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
+# --- Загрузка переменных окружения ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
-# Инициализация Telegram-бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Авторизация в Google Sheets
+# --- Авторизация Google Sheets ---
 creds = Credentials.from_service_account_info(
     CREDS_JSON,
     scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -29,7 +28,7 @@ spreadsheet = gs.open_by_url(SPREADSHEET_URL)
 sheet = spreadsheet.worksheet("List1")
 users_sheet = spreadsheet.worksheet("Пользователи")
 
-# Кэш роз
+# --- Кэш роз ---
 cached_roses = []
 def refresh_cached_roses():
     global cached_roses
@@ -39,13 +38,11 @@ def refresh_cached_roses():
     except Exception as e:
         logger.error(f"❌ Ошибка при загрузке роз: {e}")
         cached_roses = []
-
 refresh_cached_roses()
 
-# Flask-приложение
+# --- Flask-приложение ---
 app = Flask(__name__)
 WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN")
-
 try:
     bot.remove_webhook()
     bot.set_webhook(url=f"{WEBHOOK_URL}/telegram")
@@ -63,17 +60,17 @@ def webhook():
     bot.process_new_updates([update])
     return "", 200
 
-# Функция нормализации для поиска
+# --- Нормализация текста для поиска ---
 def normalize(text):
     if not text:
         return ""
     text = text.lower()
-    for sym in ['роза', 'rose', '"', '«', '»', '(', ')', '\n', '\r', '-', '–', '.', ',']:
+    for sym in ['роза', 'rose', '"', '«', '»', '(', ')', '\n', '\r', '-', '–', '.', ',', '—']:
         text = text.replace(sym, ' ')
     text = ' '.join(text.split())
     return text.strip()
 
-# Сохранение пользователя и поискового запроса
+# --- Сохраняем пользователя и запрос ---
 def save_user(message, query=None):
     try:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -87,7 +84,7 @@ def save_user(message, query=None):
     except Exception as e:
         logger.error(f"❌ Ошибка записи пользователя: {e}")
 
-# Главное меню всегда с кнопкой "Старт"
+# --- Главное меню с кнопкой "Старт" ---
 def send_main_menu(chat_id, text):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🔎 Поиск")
@@ -99,7 +96,7 @@ def send_main_menu(chat_id, text):
         reply_markup=markup
     )
 
-# Команда /start
+# --- Команда /start ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     send_main_menu(message.chat.id, "🌹 <b>Добро пожаловать!</b>\n\nВыберите действие:")
@@ -117,7 +114,7 @@ def handle_contact(message):
 def handle_order(message):
     bot.reply_to(message, "🛍 Напишите, какие сорта вас интересуют")
 
-# Поиск по названию (улучшенный)
+# --- Поиск по названию (по частям, нормализация) ---
 @bot.message_handler(func=lambda m: m.text and m.text not in ["🔎 Поиск", "📞 Связаться", "📦 Заказать"])
 def find_rose_by_name(message):
     query = normalize(message.text)
@@ -126,7 +123,7 @@ def find_rose_by_name(message):
     matches = []
     for r in cached_roses:
         name_norm = normalize(r.get('Название', ''))
-        # ищем по всем словам в запросе (например: "айсберг кордес")
+        # Совпадение по всем словам запроса, в любом порядке (по частям)
         if all(word in name_norm for word in query.split()):
             matches.append(r)
 
@@ -141,8 +138,6 @@ def find_rose_by_name(message):
             f"Цена: {rose.get('price', '?')}"
         )
         photo_url = rose.get("photo", "").split(",")[0].strip() if rose.get("photo", "") else None
-
-        # Кодируем название в callback_data (на случай наличия спецсимволов)
         rose_name_encoded = urllib.parse.quote_plus(rose.get('Название', ''))
 
         keyboard = telebot.types.InlineKeyboardMarkup()
@@ -155,10 +150,9 @@ def find_rose_by_name(message):
         else:
             bot.send_message(message.chat.id, caption, parse_mode='HTML', reply_markup=keyboard)
 
-# Кнопки "Уход" и "История"
+# --- Обработка кнопок "Уход" и "История" ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
 def handle_details(call):
-    import urllib.parse
     action, name_enc = call.data.split("_", 1)
     rose_name = urllib.parse.unquote_plus(name_enc)
     rose = next((r for r in cached_roses if normalize(rose_name) in normalize(r.get('Название', ''))), None)
@@ -170,6 +164,5 @@ def handle_details(call):
     bot.send_message(call.message.chat.id, prefix + text)
     bot.answer_callback_query(call.id)
 
-# Для запуска вручную
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
