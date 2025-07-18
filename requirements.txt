@@ -4,5 +4,4 @@ Flask==2.3.3
 google-auth==2.23.0
 python-dotenv==1.0.1
 gunicorn
-fuzzywuzzy==0.18.0
-python-Levenshtein==0.25.1
+
