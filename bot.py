@@ -80,8 +80,8 @@ def webhook():
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("🔎 Поиск")
-    markup.row("📞 Связаться", "📦 Заказать")
+    markup.add("🔎 Поиск", "📞 Связаться")
+    markup.row("📦 Заказать")
     bot.send_message(
         message.chat.id,
         "🌹 <b>Добро пожаловать!</b>\n\nВыберите действие:",
@@ -102,7 +102,7 @@ def handle_order(message):
     bot.reply_to(message, "🛒 Напишите, какие сорта вас интересуют")
 
 # Поиск розы по названию
-@bot.message_handler(func=lambda m: m.text and not m.text.startswith('/'))
+@bot.message_handler(func=lambda m: m.text and m.text not in ["🔎 Поиск", "📞 Связаться", "📦 Заказать"])
 def find_rose_by_name(message):
     query = message.text.strip().lower()
     found = None
@@ -117,9 +117,29 @@ def find_rose_by_name(message):
             f"{found.get('Описание', '')}"
         )
         photo_url = found.get('photo', 'https://example.com/default.jpg')
-        bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML')
+        # Кнопки "Уход" и "История"
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(
+            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{found.get('Название')}"),
+            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{found.get('Название')}")
+        )
+        bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
     else:
         bot.send_message(message.chat.id, "Не найдено ни одной розы с таким названием.")
+
+# Обработка нажатий на кнопки "Уход" и "История"
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
+def handle_rose_details(call):
+    action, rose_name = call.data.split("_", 1)
+    rose = next((r for r in cached_roses if rose_name.lower() in r.get('Название', '').lower()), None)
+    if not rose:
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
+    if action == "care":
+        bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
+    else:
+        bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
+    bot.answer_callback_query(call.id)
 
 # Запуск под gunicorn, main блок для отладки
 if __name__ == '__main__':
