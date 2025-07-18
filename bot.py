@@ -6,21 +6,20 @@ from flask import Flask, request
 from google.oauth2.service_account import Credentials
 import gspread
 import datetime
-import re
 
-# --- Логирование ---
+# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Переменные окружения ---
+# Загрузка переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
-# --- Telegram-бот ---
+# Инициализация Telegram-бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- Google Sheets ---
+# Авторизация в Google Sheets
 creds = Credentials.from_service_account_info(
     CREDS_JSON,
     scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -30,7 +29,7 @@ spreadsheet = gs.open_by_url(SPREADSHEET_URL)
 sheet = spreadsheet.worksheet("List1")
 users_sheet = spreadsheet.worksheet("Пользователи")
 
-# --- Кэш роз ---
+# Кэш роз
 cached_roses = []
 def refresh_cached_roses():
     global cached_roses
@@ -38,12 +37,12 @@ def refresh_cached_roses():
         cached_roses = sheet.get_all_records()
         logger.info("✅ Кэш роз обновлен")
     except Exception as e:
-        logger.error(f"❌ Ошибка при обновлении кэша роз: {e}")
+        logger.error(f"❌ Ошибка при загрузке роз: {e}")
         cached_roses = []
 
 refresh_cached_roses()
 
-# --- Flask ---
+# Flask-приложение
 app = Flask(__name__)
 WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN")
 
@@ -52,7 +51,7 @@ try:
     bot.set_webhook(url=f"{WEBHOOK_URL}/telegram")
     logger.info(f"🌐 Webhook активен: {WEBHOOK_URL}/telegram")
 except Exception as e:
-    logger.error(f"❌ Ошибка установки webhook: {e}")
+    logger.error(f"❌ Webhook ошибка: {e}")
 
 @app.route('/')
 def index():
@@ -64,18 +63,26 @@ def webhook():
     bot.process_new_updates([update])
     return "", 200
 
-# --- Нормализация текста для поиска ---
-def normalize(text):
-    if not text:
-        return ''
-    text = text.lower()
-    text = re.sub(r'[\“\”"«»\(\)]', '', text)
-    text = re.sub(r'\bроза\b', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'[^a-zA-Zа-яА-Я0-9 ]', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+# --- Хелперы ---
 
-# --- Сохранить пользователя и запрос ---
+def normalize(text):
+    return (
+        text.replace('"', '')
+            .replace("«", "")
+            .replace("»", "")
+            .replace("(", "")
+            .replace(")", "")
+            .replace('роза', '')  # чтобы запрос "роза айсберг" искал просто "айсберг"
+            .lower()
+            .strip()
+    )
+
+def main_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("🔎 Поиск", "📞 Связаться")
+    markup.row("📦 Заказать")
+    return markup
+
 def save_user(message, query=None):
     try:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -89,14 +96,8 @@ def save_user(message, query=None):
     except Exception as e:
         logger.error(f"❌ Ошибка записи пользователя: {e}")
 
-# --- Главное меню всегда при входе ---
-def main_menu():
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("🔎 Поиск")
-    markup.row("📞 Связаться", "📦 Заказать")
-    return markup
+# --- Обработчики ---
 
-# --- /start ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     bot.send_message(
@@ -119,17 +120,18 @@ def handle_contact(message):
 def handle_order(message):
     bot.send_message(message.chat.id, "🛍 Напишите, какие сорта вас интересуют", reply_markup=main_menu())
 
-# --- Поиск розы по названию (устойчивый!) ---
+# --- Поиск роз ---
 @bot.message_handler(func=lambda m: m.text and m.text not in ["🔎 Поиск", "📞 Связаться", "📦 Заказать"])
 def find_rose_by_name(message):
     query = normalize(message.text)
     save_user(message, message.text)
-
+    query_words = set(query.split())
     found = []
     for rose in cached_roses:
         rose_name = normalize(rose.get('Название', ''))
-        # Поиск по любому слову из запроса
-        if all(word in rose_name for word in query.split()):
+        rose_words = set(rose_name.split())
+        # Если хотя бы одно слово из запроса есть в названии (даже частично)
+        if any(qw in rose_name for qw in query_words):
             found.append(rose)
 
     if not found:
@@ -153,7 +155,7 @@ def find_rose_by_name(message):
         else:
             bot.send_message(message.chat.id, caption, parse_mode='HTML', reply_markup=keyboard)
 
-# --- Обработка кнопок "Уход" и "История" ---
+# --- Уход и История ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
 def handle_details(call):
     action, name = call.data.split("_", 1)
@@ -163,9 +165,9 @@ def handle_details(call):
         return
     text = rose.get("Уход" if action == "care" else "История", "Нет информации")
     prefix = "🪴 Уход:\n" if action == "care" else "📜 История:\n"
-    bot.send_message(call.message.chat.id, prefix + text)
+    bot.send_message(call.message.chat.id, prefix + text, reply_markup=main_menu())
     bot.answer_callback_query(call.id)
 
-# --- Для запуска вручную ---
+# --- Flask run ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
