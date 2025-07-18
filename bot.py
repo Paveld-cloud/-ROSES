@@ -8,7 +8,6 @@ import gspread
 import datetime
 import urllib.parse
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,28 +16,37 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
-# Инициализация Telegram-бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Авторизация в Google Sheets
+# Авторизация Google Sheets
 creds = Credentials.from_service_account_info(
     CREDS_JSON,
     scopes=["https://www.googleapis.com/auth/spreadsheets"]
 )
 gs = gspread.authorize(creds)
 spreadsheet = gs.open_by_url(SPREADSHEET_URL)
-sheet = spreadsheet.worksheet("List1")
-users_sheet = spreadsheet.worksheet("Пользователи")
+sheet = spreadsheet.worksheet("List1")          # <-- Лист с розами
+users_sheet = spreadsheet.worksheet("Пользователи")  # <-- Лист с пользователями
 
-# Кэш роз
-cached_roses = []
+# Читаем данные роз напрямую из таблицы
+def get_roses():
+    values = sheet.get_all_values()  # Сырые значения
+    headers = values[0]
+    rows = []
+    for row in values[1:]:
+        item = {headers[i]: row[i] if i < len(row) else "" for i in range(len(headers))}
+        rows.append(item)
+    return rows
+
+cached_roses = get_roses()
+
 def refresh_cached_roses():
     global cached_roses
     try:
-        cached_roses = sheet.get_all_records()
+        cached_roses = get_roses()
         logger.info("✅ Кэш роз обновлен")
     except Exception as e:
-        logger.error(f"❌ Ошибка при загрузке роз: {e}")
+        logger.error(f"❌ Ошибка обновления кэша роз: {e}")
         cached_roses = []
 
 refresh_cached_roses()
@@ -64,17 +72,17 @@ def webhook():
     bot.process_new_updates([update])
     return "", 200
 
-# Нормализация текста для поиска
+# Функция нормализации для поиска
 def normalize(text):
     if not text:
         return ""
     text = text.lower()
-    for sym in ['роза', 'rose', '"', '«', '»', '(', ')', '\n', '\r', '-', '–', '.', ',', 'ё', 'ё']:
+    for sym in ['роза', 'rose', '"', '«', '»', '(', ')', '\n', '\r', '-', '–', '.', ',']:
         text = text.replace(sym, ' ')
     text = ' '.join(text.split())
     return text.strip()
 
-# Сохраняем пользователя и запрос
+# Сохранение пользователя и поискового запроса
 def save_user(message, query=None):
     try:
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -88,7 +96,7 @@ def save_user(message, query=None):
     except Exception as e:
         logger.error(f"❌ Ошибка записи пользователя: {e}")
 
-# Главное меню
+# Главное меню всегда с кнопкой "Старт"
 def send_main_menu(chat_id, text):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🔎 Поиск")
@@ -118,17 +126,17 @@ def handle_contact(message):
 def handle_order(message):
     bot.reply_to(message, "🛍 Напишите, какие сорта вас интересуют")
 
-# Поиск по названию (устойчивый по подстроке)
+# Поиск по названию
 @bot.message_handler(func=lambda m: m.text and m.text not in ["🔎 Поиск", "📞 Связаться", "📦 Заказать"])
 def find_rose_by_name(message):
     query = normalize(message.text)
-    save_user(message, message.text)
+    save_user(message, query)
 
     matches = []
     for r in cached_roses:
         name_norm = normalize(r.get('Название', ''))
-        # Поиск по подстроке (устойчивый к ошибкам)
-        if query in name_norm:
+        # Совпадение по всем словам из запроса
+        if all(word in name_norm for word in query.split()):
             matches.append(r)
 
     if not matches:
@@ -138,11 +146,10 @@ def find_rose_by_name(message):
     for rose in matches:
         caption = (
             f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-            f"{rose.get('price', '')}"
+            f"{rose.get('price', '')}\n"
         )
         photo_url = rose.get("photo", "").split(",")[0].strip() if rose.get("photo", "") else None
 
-        # Кодируем название в callback_data (от спецсимволов)
         rose_name_encoded = urllib.parse.quote_plus(rose.get('Название', ''))
 
         keyboard = telebot.types.InlineKeyboardMarkup()
@@ -158,7 +165,6 @@ def find_rose_by_name(message):
 # Кнопки "Уход" и "История"
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
 def handle_details(call):
-    import urllib.parse
     action, name_enc = call.data.split("_", 1)
     rose_name = urllib.parse.unquote_plus(name_enc)
     rose = next((r for r in cached_roses if normalize(rose_name) == normalize(r.get('Название', ''))), None)
@@ -170,6 +176,5 @@ def handle_details(call):
     bot.send_message(call.message.chat.id, prefix + text)
     bot.answer_callback_query(call.id)
 
-# Для запуска вручную
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
