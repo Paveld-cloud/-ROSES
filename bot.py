@@ -6,6 +6,8 @@ from flask import Flask, request
 from google.oauth2.service_account import Credentials
 import gspread
 import datetime
+import threading
+import time
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -35,16 +37,28 @@ def refresh_cached_roses():
     global cached_roses
     try:
         cached_roses = sheet.get_all_records()
-        logger.info("✅ Кэш роз обновлен")
+        required_columns = ['Название', 'Описание', 'price', 'photo', 'Уход', 'История']
+        if cached_roses and not all(col in cached_roses[0] for col in required_columns):
+            logger.error("❌ Неправильная структура таблицы, отсутствуют столбцы")
+            cached_roses = []
+        else:
+            logger.info(f"✅ Кэш роз обновлен. Количество записей: {len(cached_roses)}")
     except Exception as e:
         logger.error(f"❌ Ошибка при загрузке роз: {e}")
         cached_roses = []
 
+# Периодическое обновление кэша каждые 5 минут
+def periodic_refresh():
+    while True:
+        refresh_cached_roses()
+        time.sleep(300)
+
+threading.Thread(target=periodic_refresh, daemon=True).start()
 refresh_cached_roses()
 
 # Flask-приложение
 app = Flask(__name__)
-WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN")
+WEBHOOK_URL = f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN')}"
 
 try:
     bot.remove_webhook()
@@ -66,13 +80,16 @@ def webhook():
 # --- Хелперы ---
 
 def normalize(text):
+    if not text:
+        return ""
     return (
         text.replace('"', '')
             .replace("«", "")
             .replace("»", "")
             .replace("(", "")
             .replace(")", "")
-            .replace('роза', '')  # чтобы запрос "роза айсберг" искал просто "айсберг"
+            .replace('роза', '')
+            .replace('  ', ' ')  # Удаление двойных пробелов
             .lower()
             .strip()
     )
@@ -124,21 +141,30 @@ def handle_order(message):
 @bot.message_handler(func=lambda m: m.text and m.text not in ["🔎 Поиск", "📞 Связаться", "📦 Заказать"])
 def find_rose_by_name(message):
     query = normalize(message.text)
+    logger.info(f"🔍 Поиск: '{query}' (оригинал: '{message.text}')")
     save_user(message, message.text)
-    query_words = set(query.split())
+    query_words = query.split()
     found = []
+    
     for rose in cached_roses:
         rose_name = normalize(rose.get('Название', ''))
-        rose_words = set(rose_name.split())
-        # Если хотя бы одно слово из запроса есть в названии (даже частично)
-        if any(qw in rose_name for qw in query_words):
-            found.append(rose)
+        logger.debug(f"Сравнение: '{query}' с '{rose_name}'")
+        # Проверяем, если все слова запроса присутствуют в названии
+        if all(qw in rose_name for qw in query_words) or query in rose_name:
+            found.append((rose, 100))  # Точное совпадение
+        # Проверяем частичное совпадение для коротких запросов
+        elif len(query_words) == 1 and any(qw in rose_name for qw in query_words):
+            found.append((rose, 80))  # Частичное совпадение
 
     if not found:
+        logger.info(f"❌ Не найдено для запроса: '{query}'")
         bot.send_message(message.chat.id, "❌ Розы не найдены.", reply_markup=main_menu())
         return
 
-    for rose in found:
+    # Сортировка по релевантности
+    found.sort(key=lambda x: x[1], reverse=True)
+    
+    for rose, _ in found[:5]:  # Ограничение на 5 результатов
         caption = (
             f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
             f"{rose.get('Описание', '')}\n"
@@ -151,7 +177,11 @@ def find_rose_by_name(message):
             telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{rose.get('Название')}")
         )
         if photo_url:
-            bot.send_photo(message.chat.id, photo=photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+            try:
+                bot.send_photo(message.chat.id, photo=photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+            except Exception as e:
+                logger.error(f"❌ Ошибка отправки фото: {e}")
+                bot.send_message(message.chat.id, caption, parse_mode='HTML', reply_markup=keyboard)
         else:
             bot.send_message(message.chat.id, caption, parse_mode='HTML', reply_markup=keyboard)
 
