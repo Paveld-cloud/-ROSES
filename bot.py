@@ -5,7 +5,6 @@ import telebot
 from flask import Flask, request
 from google.oauth2.service_account import Credentials
 import gspread
-import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -64,12 +63,10 @@ try:
 except Exception as e:
     logger.error(f"❌ Не удалось установить webhook: {e}")
 
-# Простой маршрут для проверки сервиса
 @app.route('/')
 def index():
     return 'Бот работает!'
 
-# Маршрут для Webhook Telegram
 @app.route('/telegram', methods=['POST'])
 def webhook():
     update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
@@ -112,22 +109,27 @@ def find_rose_by_name(message):
             found = rose
             break
     if found:
-        caption = (
-            f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n"
-            f"{found.get('Описание', '')}\nЦена: {rose.get('price', '?')}"
-        )
-        photo_url = found.get('photo', 'https://example.com/default.jpg')
-        # Кнопки "Уход" и "История"
+        caption = f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n{found.get('Описание', '')}"
+        # Поддержка нескольких фото через запятую
+        photo_urls = found.get('photo', '').split(',')
+        media_group = []
+        for i, url in enumerate(photo_urls):
+            if i == 0:
+                media_group.append(telebot.types.InputMediaPhoto(media=url.strip(), caption=caption, parse_mode='HTML'))
+            else:
+                media_group.append(telebot.types.InputMediaPhoto(media=url.strip()))
+        if media_group:
+            bot.send_media_group(message.chat.id, media_group)
+
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
             telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{found.get('Название')}"),
             telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{found.get('Название')}")
         )
-        bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+        bot.send_message(message.chat.id, "Выберите действие:", reply_markup=keyboard)
     else:
         bot.send_message(message.chat.id, "Не найдено ни одной розы с таким названием.")
 
-# Обработка нажатий на кнопки "Уход" и "История"
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
 def handle_rose_details(call):
     action, rose_name = call.data.split("_", 1)
@@ -141,7 +143,6 @@ def handle_rose_details(call):
         bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
     bot.answer_callback_query(call.id)
 
-# Запуск под gunicorn, main блок для отладки
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
