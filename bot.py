@@ -56,7 +56,7 @@ refresh_cached_roses()
 app = Flask(__name__)
 
 # Установка Webhook при старте под Gunicorn
-WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN")
+WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 try:
     bot.remove_webhook()
     bot.set_webhook(url=f"{WEBHOOK_URL}/telegram")
@@ -76,83 +76,101 @@ def webhook():
     bot.process_new_updates([update])
     return '', 200
 
-# Обработчики команд и callback'ов
-def setup_handlers():
-    @bot.message_handler(commands=['start'])
-    def send_welcome(message):
-        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.add("🔎 Поиск", "📚 Каталог")
-        markup.row("📞 Связаться", "📦 Заказать")
-        bot.send_message(
-            message.chat.id,
-            "🌹 <b>Добро пожаловать!</b>\n\nВыберите действие:",
-            parse_mode='HTML',
-            reply_markup=markup
+# ========== Хендлеры ==========
+
+user_search = {}  # хранение состояния для поиска
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("🔎 Поиск", "📚 Каталог")
+    markup.row("📞 Связаться", "📦 Заказать")
+    bot.send_message(
+        message.chat.id,
+        "🌹 <b>Добро пожаловать!</b>\n\nВыберите действие:",
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+
+@bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
+def handle_search(message):
+    bot.reply_to(message, "🔍 Введите название розы:")
+    user_search[message.chat.id] = True
+
+@bot.message_handler(func=lambda m: user_search.get(m.chat.id))
+def search_by_name(message):
+    search_text = message.text.strip().lower()
+    user_search[message.chat.id] = False  # сбрасываем флаг
+
+    found = None
+    idx_found = None
+    for idx, rose in enumerate(cached_roses):
+        if search_text in rose.get("Название", "").lower():
+            found = rose
+            idx_found = idx
+            break
+
+    if found:
+        caption = (
+            f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n\n"
+            f"{found.get('Описание', '')}\nЦена: {found.get('price', '?')} руб"
         )
-
-    @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
-    def handle_search(message):
-        bot.reply_to(message, "🔍 Введите название розы")
-
-    @bot.message_handler(func=lambda m: m.text == "📞 Связаться")
-    def handle_contact(message):
-        bot.reply_to(message, "💬 Напишите нам: @your_username")
-
-    @bot.message_handler(func=lambda m: m.text == "📦 Заказать")
-    def handle_order(message):
-        bot.reply_to(message, "🛒 Напишите, какие сорта вас интересуют")
-
-    @bot.message_handler(func=lambda m: m.text == "📚 Каталог")
-    def handle_catalog(message):
-        keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
+        photo_url = found.get('photo', 'https://example.com/default.jpg')
+        keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
-            telebot.types.InlineKeyboardButton("Чайно-гибридные", callback_data="type_Чайно-гибридные"),
-            telebot.types.InlineKeyboardButton("Плетистые", callback_data="type_Плетистые"),
-            telebot.types.InlineKeyboardButton("Почвопокровные", callback_data="type_Почвопокровные"),
-            telebot.types.InlineKeyboardButton("Флорибунда", callback_data="type_Флорибунда")
+            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx_found}"),
+            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{idx_found}")
         )
-        bot.send_message(message.chat.id, "📚 Выберите тип розы:", reply_markup=keyboard)
+        bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+    else:
+        bot.send_message(message.chat.id, "❌ Роза с таким названием не найдена.")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("type_"))
-    def handle_type(call):
-        rose_type = call.data.replace("type_", "")
-        roses = [r for r in cached_roses if r.get('Тип') == rose_type]
-        if not roses:
-            bot.answer_callback_query(call.id, "Нет роз этого типа")
-            return
+@bot.message_handler(func=lambda m: m.text == "📚 Каталог")
+def handle_catalog(message):
+    # Показываем первые 5 роз (можно сделать постранично)
+    for idx, rose in enumerate(cached_roses[:5]):
+        caption = (
+            f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n"
+            f"{rose.get('Описание', '')}\nЦена: {rose.get('price', '?')} руб"
+        )
+        photo_url = rose.get('photo', 'https://example.com/default.jpg')
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(
+            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}"),
+            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{idx}")
+        )
+        bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
-        for idx, rose in enumerate(roses[:5]):
-            caption = (
-                f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n"
-                f"{rose.get('Описание', '')}\nЦена: {rose.get('price', '?')} руб"
-            )
-            photo_url = rose.get('photo', 'https://example.com/default.jpg')
-            keyboard = telebot.types.InlineKeyboardMarkup()
-            keyboard.add(
-                telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}_{rose_type}"),
-                telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{idx}_{rose_type}")
-            )
-            bot.send_photo(call.message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
-        bot.answer_callback_query(call.id)
+@bot.message_handler(func=lambda m: m.text == "📞 Связаться")
+def handle_contact(message):
+    bot.reply_to(message, "💬 Напишите нам: @your_username")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
-    def handle_rose_details(call):
-        action, idx, rose_type = call.data.split("_")
-        idx = int(idx)
-        filtered_roses = [r for r in cached_roses if r.get('Тип') == rose_type]
-        if idx >= len(filtered_roses):
-            bot.answer_callback_query(call.id, "Роза не найдена")
-            return
-        rose = filtered_roses[idx]
-        if action == "care":
-            bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
-        else:
-            bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
+@bot.message_handler(func=lambda m: m.text == "📦 Заказать")
+def handle_order(message):
+    bot.reply_to(message, "🛒 Напишите, какие сорта вас интересуют")
 
-# Регистрируем обработчики
-setup_handlers()
+@bot.callback_query_handler(func=lambda call: call.data.startswith("care_"))
+def handle_rose_care(call):
+    idx = int(call.data.replace("care_", ""))
+    if idx >= len(cached_roses):
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
+    rose = cached_roses[idx]
+    bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
+    bot.answer_callback_query(call.id)
 
-# Запуск под gunicorn, main блок для отладки
+@bot.callback_query_handler(func=lambda call: call.data.startswith("history_"))
+def handle_rose_history(call):
+    idx = int(call.data.replace("history_", ""))
+    if idx >= len(cached_roses):
+        bot.answer_callback_query(call.id, "Роза не найдена")
+        return
+    rose = cached_roses[idx]
+    bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
+    bot.answer_callback_query(call.id)
+
+# =============================
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
