@@ -8,6 +8,7 @@ import gspread
 import datetime
 import threading
 import time
+from fuzzywuzzy import fuzz  # Импортируем fuzzywuzzy
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -137,36 +138,35 @@ def handle_contact(message):
 def handle_order(message):
     bot.send_message(message.chat.id, "🛍 Напишите, какие сорта вас интересуют", reply_markup=main_menu())
 
-# --- Поиск роз ---
+# --- Поиск роз с fuzzywuzzy ---
 @bot.message_handler(func=lambda m: m.text and m.text not in ["🔎 Поиск", "📞 Связаться", "📦 Заказать"])
 def find_rose_by_name(message):
     query = normalize(message.text)
     logger.info(f"🔍 Поиск: '{query}' (оригинал: '{message.text}')")
     save_user(message, message.text)
-    query_words = query.split()
     found = []
     
     for rose in cached_roses:
         rose_name = normalize(rose.get('Название', ''))
         logger.debug(f"Сравнение: '{query}' с '{rose_name}'")
-        # Проверяем, если все слова запроса присутствуют в названии
-        if all(qw in rose_name for qw in query_words) or query in rose_name:
-            found.append((rose, 100))  # Точное совпадение
-        # Проверяем частичное совпадение для коротких запросов
-        elif len(query_words) == 1 and any(qw in rose_name for qw in query_words):
-            found.append((rose, 80))  # Частичное совпадение
-
+        # Используем fuzzywuzzy для оценки схожести
+        score = fuzz.partial_ratio(query, rose_name)
+        if score > 80:  # Порог для совпадений (можно настроить)
+            found.append((rose, score))
+    
     if not found:
         logger.info(f"❌ Не найдено для запроса: '{query}'")
-        bot.send_message(message.chat.id, "❌ Розы не найдены.", reply_markup=main_menu())
+        bot.send_message(message.chat.id, "❌ Розы не найдены.", reply
+        _markup=main_menu())
         return
 
     # Сортировка по релевантности
     found.sort(key=lambda x: x[1], reverse=True)
     
-    for rose, _ in found[:5]:  # Ограничение на 5 результатов
+    for rose, score in found[:5]:  # Ограничение на 5 результатов
         caption = (
             f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+            f"Релевантность: {score}%\n"
             f"{rose.get('Описание', '')}\n"
             f"Цена: {rose.get('price', '?')}"
         )
