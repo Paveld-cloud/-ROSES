@@ -84,9 +84,10 @@ def normalize(text):
     if not text:
         return ""
     return (
-        text.replace('"', '')
+        text.replace('"', '')  # Удаление кавычек
             .replace("«", "")
             .replace("»", "")
+            .replace("'", "")  # Дополнительно удаляем одинарные кавычки
             .replace("(", "")
             .replace(")", "")
             .replace('роза', '')
@@ -148,10 +149,17 @@ def find_rose_by_name(message):
     
     for rose in cached_roses:
         rose_name = normalize(rose.get('Название', ''))
-        logger.debug(f"Сравнение: '{query}' с '{rose_name}'")
-        # Используем fuzzywuzzy для оценки схожести
-        score = fuzz.partial_ratio(query, rose_name)
-        if score > 80:  # Порог для совпадений (можно настроить)
+        alt_name = normalize(rose.get('Альтернативное название', ''))  # Новый столбец
+        logger.debug(f"Сравнение: '{query}' с '{rose_name}' (альт: '{alt_name}')")
+        
+        # Проверяем совпадение с основным и альтернативным названием
+        score_main = fuzz.partial_ratio(query, rose_name)
+        score_alt = fuzz.partial_ratio(query, alt_name) if alt_name else 0
+        score = max(score_main, score_alt)
+        
+        # Снижаем порог для многословных запросов
+        threshold = 70 if len(query.split()) > 1 else 80
+        if score > threshold:
             found.append((rose, score))
     
     if not found:
