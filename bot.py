@@ -114,7 +114,7 @@ def find_rose_by_name(message):
     if found:
         caption = (
             f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n"
-            f"{found.get('Описание', '')}"
+            f"{found.get('Описание', '')}\nЦена: {rose.get('price', '?')}"
         )
         photo_url = found.get('photo', 'https://example.com/default.jpg')
         # Кнопки "Уход" и "История"
