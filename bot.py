@@ -52,6 +52,11 @@ refresh_cached_roses()
 app = Flask(__name__)
 webhook_set = False
 
+# ✅ Добавлено для Railway — домен будет работать
+@app.route('/')
+def index():
+    return 'Бот работает!'
+
 @app.route('/telegram', methods=['POST'])
 def webhook():
     update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
