@@ -27,7 +27,7 @@ creds = Credentials.from_service_account_info(
 )
 gs = gspread.authorize(creds)
 spreadsheet = gs.open_by_url(SPREADSHEET_URL)
-sheet = spreadsheet.worksheet("Лист1")
+sheet = spreadsheet.worksheet("List1")
 users_sheet = spreadsheet.worksheet("Пользователи")
 
 # Кэш данных
