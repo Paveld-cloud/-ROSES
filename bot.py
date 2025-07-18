@@ -101,7 +101,7 @@ def find_rose_by_name(message):
 
         caption = (
             f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n"
-            f"{found.get('Описание', '')}"
+            f"{found.get('Описание', '')}\nЦена: {rose.get('price', '?')}"
         )
 
         keyboard = telebot.types.InlineKeyboardMarkup()
