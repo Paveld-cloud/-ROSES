@@ -9,42 +9,29 @@ import gspread
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Загрузка конфигурации из переменных окружения
-try:
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
-    CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
-except Exception as e:
-    logger.error(f"❌ Ошибка загрузки переменных окружения: {e}")
-    raise
+# Загрузка конфигурации
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
+CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
-# Инициализация Telegram-бота
-try:
-    bot = telebot.TeleBot(BOT_TOKEN)
-except Exception as e:
-    logger.error(f"❌ Ошибка инициализации бота: {e}")
-    raise
+bot = telebot.TeleBot(BOT_TOKEN)
 
 # Авторизация Google Sheets
-try:
-    creds = Credentials.from_service_account_info(
-        CREDS_JSON,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    )
-    gs = gspread.authorize(creds)
-    sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
-    logger.info("✅ Успешное подключение к Google Таблице")
-except Exception as e:
-    logger.error(f"❌ Ошибка авторизации в Google Sheets: {e}")
-    raise
+creds = Credentials.from_service_account_info(
+    CREDS_JSON,
+    scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+)
+gs = gspread.authorize(creds)
+sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+logger.info("✅ Успешное подключение к Google Таблице")
 
-# Кэш данных роз
+# Кэш роз
 cached_roses = []
 def refresh_cached_roses():
     global cached_roses
     try:
         cached_roses = sheet.get_all_records()
-        logger.info("✅ Данные успешно загружены из Google Таблицы")
+        logger.info("✅ Данные загружены из таблицы")
     except Exception as e:
         logger.error(f"❌ Ошибка при загрузке данных: {e}")
         cached_roses = []
@@ -54,14 +41,13 @@ refresh_cached_roses()
 # Flask-приложение
 app = Flask(__name__)
 
-# Установка Webhook при старте под Gunicorn
 WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN")
 try:
     bot.remove_webhook()
     bot.set_webhook(url=f"{WEBHOOK_URL}/telegram")
     logger.info(f"🌐 Webhook установлен: {WEBHOOK_URL}/telegram")
 except Exception as e:
-    logger.error(f"❌ Не удалось установить webhook: {e}")
+    logger.error(f"❌ Ошибка при установке webhook: {e}")
 
 @app.route('/')
 def index():
@@ -73,7 +59,7 @@ def webhook():
     bot.process_new_updates([update])
     return '', 200
 
-# Обработчики команд и поиска
+# Меню
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -108,28 +94,37 @@ def find_rose_by_name(message):
         if query in name:
             found = rose
             break
+
     if found:
-        caption = f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n{found.get('Описание', '')}"
-        # Поддержка нескольких фото через запятую
-        photo_urls = found.get('photo', '').split(',')
+        photos = str(found.get('photo', '')).split(',')
         media_group = []
-        for i, url in enumerate(photo_urls):
-            if i == 0:
-                media_group.append(telebot.types.InputMediaPhoto(media=url.strip(), caption=caption, parse_mode='HTML'))
-            else:
-                media_group.append(telebot.types.InputMediaPhoto(media=url.strip()))
-        if media_group:
-            bot.send_media_group(message.chat.id, media_group)
+
+        caption = (
+            f"🌹 <b>{found.get('Название', 'Без названия')}</b>\n"
+            f"{found.get('Описание', '')}"
+        )
 
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
             telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{found.get('Название')}"),
             telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{found.get('Название')}")
         )
-        bot.send_message(message.chat.id, "Выберите действие:", reply_markup=keyboard)
-    else:
-        bot.send_message(message.chat.id, "Не найдено ни одной розы с таким названием.")
 
+        if len(photos) > 1:
+            for i, url in enumerate(photos):
+                url = url.strip()
+                if i == 0:
+                    media_group.append(telebot.types.InputMediaPhoto(media=url, caption=caption, parse_mode='HTML'))
+                else:
+                    media_group.append(telebot.types.InputMediaPhoto(media=url))
+            bot.send_media_group(message.chat.id, media_group)
+            bot.send_message(message.chat.id, "👇 Выберите:", reply_markup=keyboard)
+        else:
+            bot.send_photo(message.chat.id, photos[0].strip(), caption=caption, parse_mode='HTML', reply_markup=keyboard)
+    else:
+        bot.send_message(message.chat.id, "❌ Не найдено ни одной розы с таким названием.")
+
+# Обработка кнопок "Уход" и "История"
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
 def handle_rose_details(call):
     action, rose_name = call.data.split("_", 1)
@@ -143,6 +138,7 @@ def handle_rose_details(call):
         bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
     bot.answer_callback_query(call.id)
 
+# Запуск
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
