@@ -10,6 +10,7 @@ import time
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── Получаем из env: токен, URL таблицы, JSON с ключом
 try:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
@@ -18,12 +19,14 @@ except Exception as e:
     logger.error(f"❌ Ошибка загрузки переменных окружения: {e}")
     raise
 
+# ── Инициализация бота
 try:
     bot = telebot.TeleBot(BOT_TOKEN)
 except Exception as e:
     logger.error(f"❌ Ошибка инициализации бота: {e}")
     raise
 
+# ── Авторизация Google Sheets
 try:
     creds = Credentials.from_service_account_info(
         CREDS_JSON,
@@ -36,8 +39,8 @@ except Exception as e:
     logger.error(f"❌ Ошибка авторизации в Google Sheets: {e}")
     raise
 
+# ── Кэширование данных
 cached_roses = []
-
 def refresh_cached_roses():
     global cached_roses
     try:
@@ -49,10 +52,9 @@ def refresh_cached_roses():
 
 refresh_cached_roses()
 
+# ── Flask-приложение
 app = Flask(__name__)
-webhook_set = False
 
-# ✅ Добавлено для Railway — домен будет работать
 @app.route('/')
 def index():
     return 'Бот работает!'
@@ -63,26 +65,18 @@ def webhook():
     bot.process_new_updates([update])
     return '', 200
 
-@app.before_request
-def set_webhook_once():
-    global webhook_set
-    if not webhook_set:
-        try:
-            bot.remove_webhook()
-            time.sleep(1)
-            webhook_url = f"https://{request.host}"
-            bot.set_webhook(url=f"{webhook_url}/telegram")
-            logger.info(f"🌐 Webhook установлен: {webhook_url}/telegram")
-            webhook_set = True
-        except Exception as e:
-            logger.error(f"❌ Не удалось установить webhook: {e}")
-
+# ── Команды и обработчики бота
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🔎 Поиск", "📚 Каталог")
     markup.row("📞 Связаться", "📦 Заказать")
-    bot.send_message(message.chat.id, "🌹 <b>Добро пожаловать!</b>\n\nВыберите действие:", parse_mode='HTML', reply_markup=markup)
+    bot.send_message(
+        message.chat.id,
+        "🌹 <b>Добро пожаловать!</b>\n\nВыберите действие:",
+        parse_mode='HTML',
+        reply_markup=markup
+    )
 
 @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
 def handle_search(message):
@@ -116,7 +110,10 @@ def handle_type(call):
         return
 
     for idx, rose in enumerate(roses[:5]):
-        caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n{rose.get('Описание', '')}\nЦена: {rose.get('price', '?')} руб"
+        caption = (
+            f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n\n"
+            f"{rose.get('Описание', '')}\nЦена: {rose.get('price', '?')} руб"
+        )
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
@@ -137,10 +134,20 @@ def handle_rose_details(call):
     rose = filtered_roses[idx]
     if action == "care":
         bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
-    elif action == "history":
+    else:
         bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
 
+# ── Запуск и установка Webhook
 if __name__ == '__main__':
+    # Берём домен из env
+    WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN")
+
+    # Снимаем и ставим Webhook сразу при старте
+    bot.remove_webhook()
+    bot.set_webhook(url=f"{WEBHOOK_URL}/telegram")
+    logger.info(f"🌐 Webhook установлен: {WEBHOOK_URL}/telegram")
+
+    # Запускаем Flask на нужном порту
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
     app.run(host="0.0.0.0", port=port)
