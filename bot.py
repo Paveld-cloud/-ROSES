@@ -8,7 +8,7 @@ import gspread
 import datetime
 import threading
 import time
-from fuzzywuzzy import fuzz  # Импортируем fuzzywuzzy
+from fuzzywuzzy import fuzz  # Импортируем fuzzywuzzy для нечеткого поиска
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -66,7 +66,7 @@ try:
     bot.set_webhook(url=f"{WEBHOOK_URL}/telegram")
     logger.info(f"🌐 Webhook активен: {WEBHOOK_URL}/telegram")
 except Exception as e:
-    logger.error(f"❌ Webhook ошибка: {e}")
+    logger.error(f"❌ Ошибка вебхука: {e}")
 
 @app.route('/')
 def index():
@@ -156,8 +156,7 @@ def find_rose_by_name(message):
     
     if not found:
         logger.info(f"❌ Не найдено для запроса: '{query}'")
-        bot.send_message(message.chat.id, "❌ Розы не найдены.", reply
-        _markup=main_menu())
+        bot.send_message(message.chat.id, "❌ Розы не найдены.", reply_markup=main_menu())
         return
 
     # Сортировка по релевантности
