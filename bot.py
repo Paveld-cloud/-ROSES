@@ -270,19 +270,24 @@ def setup_handlers():
     @bot.callback_query_handler(func=lambda call: call.data.startswith("delete_fav_"))
     def handle_delete_favorite(call):
         try:
-            _, idx = call.data.split("_")
-            idx = int(idx)
+            data_parts = call.data.split("_")
+            if len(data_parts) < 2:
+                logger.error(f"❌ Неверный формат callback_data: {call.data}")
+                bot.answer_callback_query(call.id, "❌ Ошибка формата")
+                return
+
+            idx = int(data_parts[2])  # delete_fav_1 → parts = ['delete', 'fav', '1']
             user_id = call.from_user.id
 
             favorites = user_favorites.get(user_id, [])
 
             if not favorites or idx >= len(favorites):
-                logger.warning(f"❌ Попытка удалить несуществующий элемент. Индекс: {idx}, длина: {len(favorites)}")
+                logger.warning(f"❌ Роза не найдена для удаления: {idx}")
                 bot.answer_callback_query(call.id, "❌ Роза не найдена")
                 return
 
             removed_rose = favorites.pop(idx)
-            logger.info(f"✅ Удалена роза: {removed_rose.get('Название')} (ID: {user_id})")
+            logger.info(f"✅ Удалено: {removed_rose.get('Название')} (ID: {user_id})")
             bot.answer_callback_query(call.id, f"✅ Удалено: {removed_rose.get('Название', 'Без названия')}")
 
             delete_favorite_from_sheet(user_id, removed_rose.get('Название', ''))
@@ -302,7 +307,7 @@ def setup_handlers():
             all_data = sheet_favorites.get_all_values()
 
             found = False
-            for row_idx, row in enumerate(all_data[1:], start=2):  # Начинаем с 2 строки (заголовок — 1)
+            for row_idx, row in enumerate(all_data[1:], start=2):  # Пропускаем заголовок
                 if str(user_id) == row[0].strip() and rose_name.strip() == row[4].strip():
                     logger.info(f"🗑 Удаляем строку {row_idx}: {row}")
                     sheet_favorites.delete_rows(row_idx)
