@@ -19,25 +19,43 @@ CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 # Инициализация Telegram-бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Авторизация Google Sheets
-creds = Credentials.from_service_account_info(
-    CREDS_JSON,
-    scopes=["https://www.googleapis.com/auth/spreadsheets "]
-)
-gs = gspread.authorize(creds)
-sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
-sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
+# Авторизация Google Sheets (если настроено)
+gs = None
+sheet = None
+sheet_users = None
+if SPREADSHEET_URL and CREDS_JSON:
+    try:
+        # Авторизация Google Sheets
+        creds = Credentials.from_service_account_info(
+            CREDS_JSON,
+            scopes=["https://www.googleapis.com/auth/spreadsheets "]
+        )
+        gs = gspread.authorize(creds)
+        sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+        sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
+        logger.info("✅ Google Sheets авторизован")
+    except Exception as e:
+        logger.warning(f"⚠️ Google Sheets не настроен: {e}")
+else:
+    logger.warning("⚠️ Google Sheets не настроена — отключена запись в таблицу")
 
 # Кэш данных роз и пользовательские данные
 cached_roses = []
 user_search_results = {}  # {user_id: [results]}
 user_favorites = {}       # {user_id: [roses]}
 
+# Хранение статистики поиска роз
+rose_search_stats = {}  # {запрос: количество_поисков}
+
 def refresh_cached_roses():
     global cached_roses
     try:
-        cached_roses = sheet.get_all_records()
-        logger.info("✅ Данные роз загружены")
+        if sheet:
+            cached_roses = sheet.get_all_records()
+            logger.info("✅ Данные роз загружены из Google Таблицы")
+        else:
+            cached_roses = []
+            logger.warning("⚠️ Google Таблица не настроена — данные роз не загружены")
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки данных: {e}")
         cached_roses = []
@@ -65,17 +83,18 @@ def webhook():
     bot.process_new_updates([update])
     return '', 200
 
-# 📥 Логирование запросов пользователей
-def log_user_query(message, query_text):
+# 📥 Логирование запросов пользователей (только если настроено)
+def log_user_query(message, query_text, found=False):
     try:
-        sheet_users.append_row([
-            message.from_user.id,
-            message.from_user.first_name,
-            f"@{message.from_user.username}" if message.from_user.username else "",
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            query_text
-        ])
-        logger.info(f"✅ Запрос пользователя сохранён: {query_text}")
+        if sheet_users and found:
+            sheet_users.append_row([
+                message.from_user.id,
+                message.from_user.first_name,
+                f"@{message.from_user.username}" if message.from_user.username else "",
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                query_text
+            ])
+            logger.info(f"✅ Запрос пользователя сохранён: {query_text}")
     except Exception as e:
         logger.error(f"❌ Ошибка записи в Google Таблицу: {e}")
 
@@ -146,12 +165,23 @@ def setup_handlers():
             return
 
         # 💾 Сохраняем запрос пользователя
-        log_user_query(message, query)
+        log_user_query(message, query)  # Без сохранения в таблицу, только в логах
 
         results = [r for r in cached_roses if query in r.get('Название', '').lower()]
         if not results:
             bot.send_message(message.chat.id, "❌ Ничего не найдено.")
             return
+
+        # Сохраняем в таблицу только успешные поиски
+        log_user_query(message, query, found=True)
+
+        # Увеличиваем статистику по найденным розам
+        for rose in results:
+            name = rose.get('Название', 'Без названия')
+            if name in rose_search_stats:
+                rose_search_stats[name] += 1
+            else:
+                rose_search_stats[name] = 1
 
         # Сохраняем результаты поиска для пользователя
         user_search_results[message.from_user.id] = results
@@ -220,8 +250,10 @@ def setup_handlers():
             else:
                 user_favorites[user_id].append(selected_rose)
                 bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
-                save_favorite_to_sheet(user_id, call.from_user, selected_rose)
 
+                # Сохраняем в Google Таблицу, если настроено
+                if SPREADSHEET_URL and sheet_users:
+                    save_favorite_to_sheet(user_id, call.from_user, selected_rose)
         except Exception as e:
             logger.error(f"❌ Ошибка добавления в избранное: {e}", exc_info=True)
             bot.answer_callback_query(call.id, "❌ Ошибка")
@@ -272,11 +304,11 @@ def setup_handlers():
         try:
             data_parts = call.data.split("_")
             if len(data_parts) < 2:
-                logger.error(f"❌ Неверный формат callback_data: {call.data}")
+                logger.error(f"❌ Неверный формат callback_ {call.data}")
                 bot.answer_callback_query(call.id, "❌ Ошибка формата")
                 return
 
-            idx = int(data_parts[2])  # delete_fav_1 → parts = ['delete', 'fav', '1']
+            idx = int(data_parts[2])  # delete_fav_1 → ['delete', 'fav', '1']
             user_id = call.from_user.id
 
             favorites = user_favorites.get(user_id, [])
@@ -290,7 +322,11 @@ def setup_handlers():
             logger.info(f"✅ Удалено: {removed_rose.get('Название')} (ID: {user_id})")
             bot.answer_callback_query(call.id, f"✅ Удалено: {removed_rose.get('Название', 'Без названия')}")
 
-            delete_favorite_from_sheet(user_id, removed_rose.get('Название', ''))
+            # Удаляем из Google Таблицы, если настроено
+            if SPREADSHEET_URL:
+                delete_favorite_from_sheet(user_id, removed_rose.get('Название', ''))
+            else:
+                logger.warning("❌ Google Таблица не настроена — удаление невозможно")
 
             bot.send_message(call.message.chat.id, "🔄 Обновлённый список избранного:")
             show_favorites(call.message)
@@ -319,6 +355,44 @@ def setup_handlers():
 
         except Exception as e:
             logger.error(f"❌ Ошибка удаления из Google Таблицы: {e}", exc_info=True)
+
+    @bot.message_handler(commands=['stats'])
+    def send_stats(message):
+        if not rose_search_stats:
+            bot.send_message(message.chat.id, "📊 Пока нет статистики по поиску роз.")
+            return
+
+        bot.send_message(message.chat.id, "📈 Статистика поиска роз:")
+
+        sorted_stats = sorted(rose_search_stats.items(), key=lambda x: x[1], reverse=True)
+        for name, count in sorted_stats:
+            bot.send_message(message.chat.id, f"🌹 {name}: {count} поисков")
+
+        # Сохраняем статистику в Google Таблицу
+        if SPREADSHEET_URL:
+            save_stats_to_sheet()
+
+    def save_stats_to_sheet():
+        if not SPREADSHEET_URL:
+            logger.warning("❌ Google Таблица не настроена — статистика не сохранена")
+            return
+
+        try:
+            sheet_stats = gs.open_by_url(SPREADSHEET_URL).worksheet("Статистика")
+
+            # Очищаем таблицу и добавляем заголовок
+            sheet_stats.clear()
+            sheet_stats.append_row(["Запрос", "Количество поисков"])
+
+            # Сортируем по популярности
+            sorted_stats = sorted(rose_search_stats.items(), key=lambda x: x[1], reverse=True)
+
+            for name, count in sorted_stats:
+                sheet_stats.append_row([name, count])
+
+            logger.info("📊 Статистика поиска успешно сохранена в Google Таблицу")
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения статистики: {e}")
 
 setup_handlers()
 
