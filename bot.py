@@ -28,9 +28,10 @@ gs = gspread.authorize(creds)
 sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
 sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
 
-# Кэш данных роз и результатов поиска
+# Кэш данных роз и пользовательские данные
 cached_roses = []
 user_search_results = {}  # {user_id: [results]}
+user_favorites = {}       # {user_id: [roses]}
 
 def refresh_cached_roses():
     global cached_roses
@@ -92,7 +93,7 @@ def setup_handlers():
     def send_main_menu(chat_id, text):
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add("🔎 Поиск")
-        markup.row("📞 Связаться")
+        markup.row("📞 Связаться", "⭐ Избранное")
         bot.send_message(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
     @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
@@ -102,6 +103,37 @@ def setup_handlers():
     @bot.message_handler(func=lambda m: m.text == "📞 Связаться")
     def handle_contact(message):
         bot.reply_to(message, "💬 Напишите нам: @your_username")
+
+    @bot.message_handler(func=lambda m: m.text == "⭐ Избранное")
+    def handle_favorites(message):
+        show_favorites(message)
+
+    @bot.message_handler(commands=['favorites'])
+    def handle_favorites_command(message):
+        show_favorites(message)
+
+    def show_favorites(message):
+        user_id = message.from_user.id
+        favorites = user_favorites.get(user_id, [])
+
+        if not favorites:
+            bot.send_message(message.chat.id, "💔 У вас пока нет избранных роз.")
+            return
+
+        bot.send_message(message.chat.id, "⭐ Ваши избранные розы:")
+
+        for idx, rose in enumerate(favorites):
+            caption = (
+                f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+                f"Описание: {rose.get('Описание', '?')}"
+            )
+            photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+            keyboard = telebot.types.InlineKeyboardMarkup()
+            keyboard.add(
+                telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"fav_care_{idx}"),
+                telebot.types.InlineKeyboardButton("📜 История", callback_data=f"fav_history_{idx}")
+            )
+            bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
     @bot.message_handler(func=lambda message: True)
     def handle_search_text(message):
@@ -132,9 +164,12 @@ def setup_handlers():
 
         photo_url = rose.get('photo', 'https://example.com/default.jpg ')
         keyboard = telebot.types.InlineKeyboardMarkup()
-        keyboard.add(
+        keyboard.row(
             telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{user_id}_{idx}"),
             telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{user_id}_{idx}")
+        )
+        keyboard.add(
+            telebot.types.InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{user_id}_{idx}")
         )
         bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
@@ -159,6 +194,54 @@ def setup_handlers():
         except Exception as e:
             logger.error(f"Ошибка обработки callback: {e}")
             bot.answer_callback_query(call.id, "Произошла ошибка")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("favorite_"))
+    def handle_add_to_favorites(call):
+        try:
+            _, user_id, idx = call.data.split("_")
+            user_id = int(user_id)
+            idx = int(idx)
+
+            results = user_search_results.get(user_id, [])
+            if not results or idx >= len(results):
+                bot.answer_callback_query(call.id, "❌ Роза не найдена")
+                return
+
+            selected_rose = results[idx]
+
+            # Проверяем, есть ли уже эта роза в избранном
+            if user_id not in user_favorites:
+                user_favorites[user_id] = []
+
+            if any(r.get('Название') == selected_rose.get('Название') for r in user_favorites[user_id]):
+                bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
+            else:
+                user_favorites[user_id].append(selected_rose)
+                bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
+        except Exception as e:
+            logger.error(f"Ошибка добавления в избранное: {e}")
+            bot.answer_callback_query(call.id, "❌ Ошибка")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith(("fav_care_", "fav_history_")))
+    def handle_favorite_details(call):
+        try:
+            action, idx = call.data.split("_")
+            idx = int(idx)
+            user_id = call.from_user.id
+
+            favorites = user_favorites.get(user_id, [])
+            if not favorites or idx >= len(favorites):
+                bot.answer_callback_query(call.id, "❌ Роза не найдена")
+                return
+
+            rose = favorites[idx]
+            if action == "fav_care":
+                bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
+            elif action == "fav_history":
+                bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
+        except Exception as e:
+            logger.error(f"Ошибка обработки избранного: {e}")
+            bot.answer_callback_query(call.id, "❌ Ошибка")
 
 setup_handlers()
 
