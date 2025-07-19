@@ -1,67 +1,80 @@
+# bot.py
 import os
 import json
 import logging
 import telebot
 from flask import Flask, request
+from datetime import datetime
 from google.oauth2.service_account import Credentials
 import gspread
-from datetime import datetime
 
-# Логирование
+# ===== Настройки и логирование =====
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
-# Инициализация Telegram-бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Авторизация Google Sheets (если настроено)
+# ===== Авторизация Google Sheets =====
 gs = None
-sheet = None
+sheet_roses = None
 sheet_users = None
-sheet_favorites_table = None
+sheet_favorites = None
 
-if SPREADSHEET_URL and CREDS_JSON:
-    try:
-        creds = Credentials.from_service_account_info(
-            CREDS_JSON,
-            scopes=["https://www.googleapis.com/auth/spreadsheets "]
-        )
-        gs = gspread.authorize(creds)
-        sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
-        sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
-        sheet_favorites_table = gs.open_by_url(SPREADSHEET_URL).worksheet("Избранное")
-        logger.info("✅ Google Sheets авторизован")
-    except Exception as e:
-        logger.warning(f"⚠️ Google Sheets не настроен: {e}")
-else:
-    logger.warning("⚠️ Google Sheets не настроена — отключена запись в таблицу")
+try:
+    creds = Credentials.from_service_account_info(
+        CREDS_JSON,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    gs = gspread.authorize(creds)
+    spreadsheet = gs.open_by_url(SPREADSHEET_URL)
+    sheet_roses = spreadsheet.sheet1
+    sheet_users = spreadsheet.worksheet("Пользователи")
+    sheet_favorites = spreadsheet.worksheet("Избранное")
+    logger.info("✅ Авторизация Google Sheets прошла успешно")
+except Exception as e:
+    logger.error(f"❌ Ошибка авторизации: {e}")
 
-# Кэш данных роз и пользовательские данные
+# ===== Кэш данных =====
 cached_roses = []
-user_search_results = {}  # {user_id: [results]}
-user_favorites = {}       # {user_id: [roses]}
+user_search_results = {}  # user_id: [roses]
+user_favorites = {}       # user_id: [roses]
 
-def refresh_cached_roses():
+def load_roses():
     global cached_roses
     try:
-        if sheet:
-            cached_roses = sheet.get_all_records()
-            logger.info("✅ Данные роз загружены из Google Таблицы")
-        else:
-            cached_roses = []
-            logger.warning("⚠️ Google Таблица не настроена — данные роз не загружены")
+        cached_roses = sheet_roses.get_all_records()
+        logger.info(f"✅ Загружено {len(cached_roses)} роз из таблицы")
     except Exception as e:
-        logger.error(f"❌ Ошибка загрузки данных: {e}")
+        logger.error(f"❌ Не удалось загрузить розы: {e}")
         cached_roses = []
 
-refresh_cached_roses()
+def load_favorites():
+    try:
+        all_rows = sheet_favorites.get_all_records()
+        for row in all_rows:
+            user_id = int(row['ID'])
+            rose = {
+                'Название': row['Название'],
+                'Описание': row['Описание'],
+                'photo': row['photo'],
+                'Уход': row['Уход'],
+                'История': row['История']
+            }
+            if user_id not in user_favorites:
+                user_favorites[user_id] = []
+            user_favorites[user_id].append(rose)
+        logger.info("✅ Избранное загружено")
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки избранного: {e}")
 
-# Flask и Webhook
+load_roses()
+load_favorites()
+
+# ===== Flask Webhook =====
 app = Flask(__name__)
 WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 try:
@@ -73,213 +86,148 @@ except Exception as e:
     logger.error(f"❌ Webhook не установлен: {e}")
 
 @app.route('/')
-def index():
-    return 'Бот работает!'
+def home():
+    return 'Bot is running'
 
 @app.route('/telegram', methods=['POST'])
-def webhook():
+def telegram():
     update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
     bot.process_new_updates([update])
     return '', 200
 
-# 📥 Логирование запросов в Google Таблицу (только успешных)
-def log_found_rose(message, rose_name):
-    try:
-        if sheet_users:
-            sheet_users.append_row([
-                message.from_user.id,
-                message.from_user.first_name,
-                f"@{message.from_user.username}" if message.from_user.username else "",
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
-                rose_name
-            ])
-            logger.info(f"✅ Сохранён найденный сорт: {rose_name}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка записи розы в Google Таблицу: {e}")
-
-# ==== ОСНОВНЫЕ КОМАНДЫ ====
+# ===== Основные команды =====
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
+def start(message):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🔎 Поиск")
     markup.row("📞 Связаться", "⭐ Избранное")
-    bot.send_message(message.chat.id, "🌹 <b>Добро пожаловать!</b>\n\nНажмите \"Поиск\" и введите название розы.", parse_mode='HTML', reply_markup=markup)
+    bot.send_message(message.chat.id, "🌹 Добро пожаловать! Напишите название розы.", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
-def handle_search_prompt(message):
+def search_prompt(message):
     bot.send_message(message.chat.id, "🔍 Введите название розы")
 
-@bot.message_handler(func=lambda m: True)
-def handle_search_text(message):
-    query = message.text.strip().lower()
-    results = [r for r in cached_roses if query in r.get('Название', '').lower()]
+@bot.message_handler(func=lambda m: m.text == "⭐ Избранное")
+def favorites(message):
+    show_favorites(message)
 
+@bot.message_handler(func=lambda m: True)
+def search(message):
+    query = message.text.strip().lower()
+    results = [r for r in cached_roses if query in r.get("Название", "").lower()]
     if not results:
         bot.send_message(message.chat.id, "❌ Ничего не найдено.")
         return
-
     user_search_results[message.from_user.id] = results
-
     for idx, rose in enumerate(results[:5]):
         send_rose_card(message.chat.id, rose, message.from_user.id, idx)
-        log_found_rose(message, rose.get("Название", "Неизвестно"))
+        log_found_rose(message, rose)
 
-# Отправка карточки розы
 def send_rose_card(chat_id, rose, user_id, idx):
-    caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\nОписание: {rose.get('Описание', '?')}"
-    photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+    caption = (
+        f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+        f"Описание: {rose.get('Описание', '?')}"
+    )
+    photo_url = rose.get('photo', '')
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.row(
         telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{user_id}_{idx}"),
         telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{user_id}_{idx}")
     )
     keyboard.add(
-        telebot.types.InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{user_id}_{idx}")
+        telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{user_id}_{idx}")
     )
     bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
-# ==== ИЗБРАННОЕ ====
-@bot.message_handler(func=lambda m: m.text == "⭐ Избранное")
-def handle_favorites(message):
-    show_favorites(message)
+def log_found_rose(message, rose):
+    try:
+        sheet_users.append_row([
+            message.from_user.id,
+            message.from_user.first_name,
+            f"@{message.from_user.username}" if message.from_user.username else "",
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            rose.get("Название", "Неизвестно")
+        ])
+    except:
+        pass
 
-@bot.message_handler(commands=['favorites'])
-def handle_favorites_command(message):
-    show_favorites(message)
+@bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
+def handle_details(call):
+    action, user_id, idx = call.data.split("_")
+    user_id = int(user_id)
+    idx = int(idx)
+    rose_list = user_search_results.get(user_id, [])
+    if idx >= len(rose_list):
+        bot.answer_callback_query(call.id, "❌ Роза не найдена")
+        return
+    rose = rose_list[idx]
+    field = "Уход" if action == "care" else "История"
+    text = rose.get(field, "Нет данных")
+    bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{text}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("fav_"))
+def add_favorite(call):
+    _, user_id, idx = call.data.split("_")
+    user_id = int(user_id)
+    idx = int(idx)
+    rose_list = user_search_results.get(user_id, [])
+    if idx >= len(rose_list):
+        bot.answer_callback_query(call.id, "❌ Роза не найдена")
+        return
+    rose = rose_list[idx]
+    if user_id not in user_favorites:
+        user_favorites[user_id] = []
+    if any(r.get("Название") == rose.get("Название") for r in user_favorites[user_id]):
+        bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
+        return
+    user_favorites[user_id].append(rose)
+    try:
+        sheet_favorites.append_row([
+            user_id,
+            call.from_user.first_name,
+            f"@{call.from_user.username}" if call.from_user.username else "",
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            rose.get("Название", ""),
+            rose.get("Описание", ""),
+            rose.get("photo", ""),
+            rose.get("Уход", ""),
+            rose.get("История", "")
+        ])
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения избранного: {e}")
+    bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
 
 def show_favorites(message):
     user_id = message.from_user.id
-    favorites = user_favorites.get(user_id, [])
-
-    if not favorites:
-        bot.send_message(message.chat.id, "💔 У вас пока нет избранных роз.")
+    favs = user_favorites.get(user_id, [])
+    if not favs:
+        bot.send_message(message.chat.id, "💔 У вас нет избранных роз.")
         return
-
     bot.send_message(message.chat.id, "⭐ Ваши избранные розы:")
-
-    for idx, rose in enumerate(favorites):
-        caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\nОписание: {rose.get('Описание', '?')}"
-        photo_url = rose.get('photo', 'https://example.com/default.jpg ')
+    for rose in favs:
+        caption = f"🌹 <b>{rose.get('Название')}</b>\nОписание: {rose.get('Описание')}"
+        photo_url = rose.get('photo', '')
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.row(
-            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"fav_care_{idx}"),
-            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"fav_history_{idx}")
-        )
-        keyboard.add(
-            telebot.types.InlineKeyboardButton("❌ Удалить из избранного", callback_data=f"delete_fav_{idx}")
+            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"showcare_{rose.get('Название')}"),
+            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"showhist_{rose.get('Название')}")
         )
         bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
-# Добавление в избранное
-@bot.callback_query_handler(func=lambda call: call.data.startswith("favorite_"))
-def handle_add_to_favorites(call):
-    try:
-        _, user_id, idx = call.data.split("_")
-        user_id = int(user_id)
-        idx = int(idx)
-
-        results = user_search_results.get(user_id, [])
-        if not results or idx >= len(results):
-            bot.answer_callback_query(call.id, "❌ Роза не найдена")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("showcare_") or call.data.startswith("showhist_"))
+def handle_fav_details(call):
+    prefix, name = call.data.split("_", 1)
+    field = "Уход" if prefix == "showcare" else "История"
+    user_id = call.from_user.id
+    favs = user_favorites.get(user_id, [])
+    for rose in favs:
+        if rose.get("Название") == name:
+            bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}")
             return
+    bot.answer_callback_query(call.id, "❌ Не найдено")
 
-        selected_rose = results[idx]
-
-        if user_id not in user_favorites:
-            user_favorites[user_id] = []
-
-        if any(r.get('Название') == selected_rose.get('Название') for r in user_favorites[user_id]):
-            bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
-        else:
-            user_favorites[user_id].append(selected_rose)
-            bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
-            save_favorite_to_sheet(user_id, call.from_user, selected_rose)
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка добавления в избранное: {e}")
-        bot.answer_callback_query(call.id, "❌ Ошибка")
-
-def save_favorite_to_sheet(user_id, user, rose):
-    try:
-        first_name = user.first_name
-        username = f"@{user.username}" if user.username else ""
-        date = datetime.now().strftime("%Y-%m-%d %H:%M")
-        favorite_name = rose.get("Название", "Без названия")
-
-        sheet_favorites = gs.open_by_url(SPREADSHEET_URL).worksheet("Избранное")
-        sheet_favorites.append_row([
-            user_id,
-            first_name,
-            username,
-            date,
-            favorite_name
-        ])
-        logger.info(f"✅ Добавлено в избранное: {favorite_name} (ID: {user_id})")
-    except Exception as e:
-        logger.error(f"❌ Ошибка записи в Google Таблицу: {e}")
-
-# Удаление из избранного
-@bot.callback_query_handler(func=lambda call: call.data.startswith("delete_fav_"))
-def handle_delete_favorite(call):
-    try:
-        _, idx = call.data.split("_")
-        idx = int(idx)
-        user_id = call.from_user.id
-
-        favorites = user_favorites.get(user_id, [])
-
-        if not favorites or idx >= len(favorites):
-            bot.answer_callback_query(call.id, "❌ Роза не найдена")
-            return
-
-        removed_rose = favorites.pop(idx)
-        bot.answer_callback_query(call.id, f"✅ Удалено: {removed_rose.get('Название', 'Без названия')}")
-
-        delete_favorite_from_sheet(user_id, removed_rose.get('Название', ''))
-        bot.send_message(call.message.chat.id, "🔄 Обновлённый список избранного:")
-        show_favorites(call.message)
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка удаления из избранного: {e}")
-        bot.answer_callback_query(call.id, "❌ Ошибка при удалении")
-
-def delete_favorite_from_sheet(user_id, rose_name):
-    try:
-        all_data = sheet_favorites_table.get_all_values()
-
-        for row_idx, row in enumerate(all_data[1:], start=2):  # Пропускаем заголовок
-            if str(user_id) == row[0].strip() and rose_name.strip() == row[4].strip():
-                sheet_favorites_table.delete_rows(row_idx)
-                logger.info(f"✅ Удалено из Google Таблицы: {rose_name} (ID: {user_id})")
-                return
-    except Exception as e:
-        logger.error(f"❌ Ошибка удаления из Google Таблицы: {e}")
-
-# Детали из избранного
-@bot.callback_query_handler(func=lambda call: call.data.startswith(("fav_care_", "fav_history_")))
-def handle_favorite_details(call):
-    try:
-        action, idx = call.data.split("_")
-        idx = int(idx)
-        user_id = call.from_user.id
-
-        favorites = user_favorites.get(user_id, [])
-        if not favorites or idx >= len(favorites):
-            bot.answer_callback_query(call.id, "❌ Роза не найдена")
-            return
-
-        rose = favorites[idx]
-        if action == "fav_care":
-            bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
-        elif action == "fav_history":
-            bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка деталей избранного: {e}")
-        bot.answer_callback_query(call.id, "❌ Ошибка")
-
-# ==== ЗАПУСК ====
-if __name__ == '__main__':
+# ===== Запуск Flask =====
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    logger.info(f"🚀 Запуск бота на порту {port}")
+    logger.info(f"🚀 Запуск на порту {port}")
     app.run(host="0.0.0.0", port=port)
