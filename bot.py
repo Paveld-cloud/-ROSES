@@ -104,7 +104,7 @@ def setup_handlers():
         caption = (
     f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
     f"{rose.get('Описание', '')}\n"
-    f"Цена: {rose.get('price', '?')}"
+    f"🌹Описание: {rose.get('price', '?')}"
 )
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
