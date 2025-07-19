@@ -129,7 +129,7 @@ def setup_handlers():
         caption = (
     f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
     f"{rose.get('Описание', '')}\n"
-    f"Описание: {rose.get('Описание', '?')}"
+    f"Описание: {rose.get('price', '?')}"
         )
 
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
@@ -160,4 +160,4 @@ setup_handlers()
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
-    app.run(host="0.0.0.0", port=port
+    app.run(host="0.0.0.0", port=port) 
