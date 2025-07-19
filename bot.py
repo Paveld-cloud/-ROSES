@@ -116,8 +116,7 @@ def setup_handlers():
     def send_rose_card(chat_id, rose):
         caption = (
             f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-            f"{rose.get('Описание', '')}\n"
-            f"Описание: {rose.get('price', '?')}"
+            f"{rose.get('price', '')}"
         )
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
