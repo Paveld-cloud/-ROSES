@@ -22,14 +22,16 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # Авторизация Google Sheets
 creds = Credentials.from_service_account_info(
     CREDS_JSON,
-    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    scopes=["https://www.googleapis.com/auth/spreadsheets "]
 )
 gs = gspread.authorize(creds)
 sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
 sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
 
-# Кэш данных роз
+# Кэш данных роз и результатов поиска
 cached_roses = []
+user_search_results = {}  # {user_id: [results]}
+
 def refresh_cached_roses():
     global cached_roses
     try:
@@ -116,35 +118,40 @@ def setup_handlers():
             bot.send_message(message.chat.id, "❌ Ничего не найдено.")
             return
 
+        # Сохраняем результаты поиска для пользователя
+        user_search_results[message.from_user.id] = results
+
         for idx, rose in enumerate(results[:5]):
-            send_rose_card(message.chat.id, rose, idx)
+            send_rose_card(message.chat.id, rose, message.from_user.id, idx)
 
-    def send_rose_card(chat_id, rose, idx=0):
-        description = ''
-        for key in rose:
-            if key.strip().lower() == 'описание':
-                description = rose[key]
-                break
-
+    def send_rose_card(chat_id, rose, user_id, idx):
         caption = (
-    f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-    f"Описание: {rose.get('Описание', '?')}"
+            f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+            f"Описание: {rose.get('Описание', '?')}"
         )
 
-        photo_url = rose.get('photo', 'https://example.com/default.jpg')
+        photo_url = rose.get('photo', 'https://example.com/default.jpg ')
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
-            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}"),
-            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{idx}")
+            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{user_id}_{idx}"),
+            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{user_id}_{idx}")
         )
         bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
     def handle_rose_details(call):
         try:
-            action, idx = call.data.split("_")
+            action, user_id, idx = call.data.split("_")
+            user_id = int(user_id)
             idx = int(idx)
-            rose = cached_roses[idx]
+
+            # Получаем результаты поиска пользователя
+            results = user_search_results.get(user_id, [])
+            if not results or idx >= len(results):
+                bot.answer_callback_query(call.id, "❌ Результат не найден")
+                return
+
+            rose = results[idx]
             if action == "care":
                 bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
             else:
@@ -159,4 +166,4 @@ setup_handlers()
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
-    app.run(host="0.0.0.0", port=port) 
+    app.run(host="0.0.0.0", port=port)
