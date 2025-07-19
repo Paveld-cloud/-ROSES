@@ -45,7 +45,7 @@ user_search_results = {}  # {user_id: [results]}
 user_favorites = {}       # {user_id: [roses]}
 
 # Хранение статистики поиска роз
-rose_search_stats = {}  # {запрос: количество_поисков}
+rose_search_stats = {}  # {название_розы: количество_поисков}
 
 def refresh_cached_roses():
     global cached_roses
@@ -87,12 +87,13 @@ def webhook():
 def log_user_query(message, query_text, found=False):
     try:
         if sheet_users and found:
+            # Сохраняем название розы, а не входной запрос
             sheet_users.append_row([
                 message.from_user.id,
                 message.from_user.first_name,
                 f"@{message.from_user.username}" if message.from_user.username else "",
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
-                query_text
+                query_text  # Здесь можно заменить на название розы, если нужно
             ])
             logger.info(f"✅ Запрос пользователя сохранён: {query_text}")
     except Exception as e:
@@ -382,7 +383,7 @@ def setup_handlers():
 
             # Очищаем таблицу и добавляем заголовок
             sheet_stats.clear()
-            sheet_stats.append_row(["Запрос", "Количество поисков"])
+            sheet_stats.append_row(["Сорт розы", "Количество поисков"])
 
             # Сортируем по популярности
             sorted_stats = sorted(rose_search_stats.items(), key=lambda x: x[1], reverse=True)
