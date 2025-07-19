@@ -6,7 +6,6 @@ from flask import Flask, request
 from google.oauth2.service_account import Credentials
 import gspread
 from datetime import datetime
-from urllib.parse import quote_plus, unquote_plus
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -109,6 +108,7 @@ def setup_handlers():
             send_main_menu(message.chat.id, "🔄 Меню восстановлено.")
             return
 
+        # 💾 Сохраняем запрос пользователя
         log_user_query(message, query)
 
         results = [r for r in cached_roses if query in r.get('Название', '').lower()]
@@ -116,35 +116,36 @@ def setup_handlers():
             bot.send_message(message.chat.id, "❌ Ничего не найдено.")
             return
 
-        for rose in results[:5]:
-            send_rose_card(message.chat.id, rose)
+        for idx, rose in enumerate(results[:5]):
+            send_rose_card(message.chat.id, rose, idx)
 
-    def send_rose_card(chat_id, rose):
+    def send_rose_card(chat_id, rose, idx=0):
+        description = ''
+        for key in rose:
+            if key.strip().lower() == 'описание':
+                description = rose[key]
+                break
+
         caption = (
-            f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-            f"{rose.get('Описание', '')}"
+    f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+    f"{rose.get('Описание', '')}\n"
+    f"Описание: {rose.get('price', '?')}"
         )
-        photo_url = rose.get('photo', 'https://example.com/default.jpg')
-        name_encoded = quote_plus(rose.get('Название', ''))
 
+        photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
-            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{name_encoded}"),
-            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{name_encoded}")
+            telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"care_{idx}"),
+            telebot.types.InlineKeyboardButton("📜 История", callback_data=f"history_{idx}")
         )
         bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
     def handle_rose_details(call):
         try:
-            action, encoded_name = call.data.split("_", 1)
-            rose_name = unquote_plus(encoded_name).lower()
-            rose = next((r for r in cached_roses if r.get('Название', '').lower() == rose_name), None)
-
-            if not rose:
-                bot.answer_callback_query(call.id, "Роза не найдена")
-                return
-
+            action, idx = call.data.split("_")
+            idx = int(idx)
+            rose = cached_roses[idx]
             if action == "care":
                 bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
             else:
@@ -159,4 +160,4 @@ setup_handlers()
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)            
