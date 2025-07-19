@@ -12,15 +12,15 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
+# Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 
-# Инициализация Telegram-бота
+# Инициализация бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Авторизация Google Sheets
+# Авторизация в Google Sheets
 creds = Credentials.from_service_account_info(
     CREDS_JSON,
     scopes=["https://www.googleapis.com/auth/spreadsheets"]
@@ -29,7 +29,7 @@ gs = gspread.authorize(creds)
 sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
 sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
 
-# Кэш данных роз
+# Кэш роз
 cached_roses = []
 def refresh_cached_roses():
     global cached_roses
@@ -42,7 +42,7 @@ def refresh_cached_roses():
 
 refresh_cached_roses()
 
-# Flask
+# Flask-приложение
 app = Flask(__name__)
 WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 try:
@@ -116,7 +116,7 @@ def setup_handlers():
     def send_rose_card(chat_id, rose):
         caption = (
             f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-            f"{rose.get('price', '')}"
+            f"{rose.get('Описание', '')}"
         )
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
