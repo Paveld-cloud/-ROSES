@@ -128,7 +128,7 @@ def setup_handlers():
             return
 
         for idx, rose in enumerate(roses[:5]):
-            send_rose_card(call.message.chat.id, rose, idx, rose_type)
+            send_rose_card(message.chat.id, rose, idx, rose.get('Тип', ''))
         bot.answer_callback_query(call.id)
 
     @bot.message_handler(func=lambda message: True)
