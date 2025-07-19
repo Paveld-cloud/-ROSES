@@ -120,16 +120,12 @@ def setup_handlers():
             send_rose_card(message.chat.id, rose, idx)
 
     def send_rose_card(chat_id, rose, idx=0):
-        description = ''
-        for key in rose:
-            if key.strip().lower() == 'описание':
-                description = rose[key]
-                break
+        description = rose.get('Описание', '')
 
         caption = (
-    f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-    f"{rose.get('Описание', '')}\n"
-    f"Описание: {rose.get('price', '?')}"
+            f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+            f"{description}\n"
+            f"Цена: {rose.get('price', '?')}"
         )
 
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
@@ -160,4 +156,4 @@ setup_handlers()
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск Flask на порту {port}")
-    app.run(host="0.0.0.0", port=port)            
+    app.run(host="0.0.0.0", port=port)
