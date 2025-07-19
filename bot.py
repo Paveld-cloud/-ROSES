@@ -216,37 +216,4 @@ def setup_handlers():
             if any(r.get('Название') == selected_rose.get('Название') for r in user_favorites[user_id]):
                 bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
             else:
-                user_favorites[user_id].append(selected_rose)
-                bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
-        except Exception as e:
-            logger.error(f"Ошибка добавления в избранное: {e}")
-            bot.answer_callback_query(call.id, "❌ Ошибка")
-
-    @bot.callback_query_handler(func=lambda call: call.data.startswith(("fav_care_", "fav_history_")))
-    def handle_favorite_details(call):
-        try:
-            action, idx = call.data.split("_")
-            idx = int(idx)
-            user_id = call.from_user.id
-
-            favorites = user_favorites.get(user_id, [])
-            if not favorites or idx >= len(favorites):
-                bot.answer_callback_query(call.id, "❌ Роза не найдена")
-                return
-
-            rose = favorites[idx]
-            if action == "fav_care":
-                bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
-            elif action == "fav_history":
-                bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
-        except Exception as e:
-            logger.error(f"Ошибка обработки избранного: {e}")
-            bot.answer_callback_query(call.id, "❌ Ошибка")
-
-setup_handlers()
-
-# Запуск Flask
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))
-    logger.info(f"🚀 Запуск Flask на порту {port}")
-    app.run(host="0.0.0.0", port=port)
+                user_favorites[user_id].append(selected_се
