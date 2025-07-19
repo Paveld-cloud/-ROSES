@@ -128,7 +128,7 @@ def setup_handlers():
 
         caption = (
     f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-    f"Описание: {rose.get('price', '?')}"
+    f"Описание: {rose.get('Описание', '?')}"
         )
 
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
