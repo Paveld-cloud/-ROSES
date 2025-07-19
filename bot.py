@@ -201,22 +201,20 @@ def handle_add_to_favorites(call):
 
 def save_favorite_to_sheet(user_id, user, rose):
     try:
-        if not sheet_favorites_table:
-            return
-
         first_name = user.first_name
         username = f"@{user.username}" if user.username else ""
         date = datetime.now().strftime("%Y-%m-%d %H:%M")
         favorite_name = rose.get("Название", "Без названия")
 
-        sheet_favorites_table.append_row([
+        sheet_favorites = gs.open_by_url(SPREADSHEET_URL).worksheet("Избранное")
+        sheet_favorites.append_row([
             user_id,
             first_name,
             username,
             date,
             favorite_name
         ])
-        logger.info(f"✅ Добавлено в Google Таблицу: {favorite_name} (ID: {user_id})")
+        logger.info(f"✅ Добавлено в избранное: {favorite_name} (ID: {user_id})")
     except Exception as e:
         logger.error(f"❌ Ошибка записи в Google Таблицу: {e}")
 
@@ -237,9 +235,7 @@ def handle_delete_favorite(call):
         removed_rose = favorites.pop(idx)
         bot.answer_callback_query(call.id, f"✅ Удалено: {removed_rose.get('Название', 'Без названия')}")
 
-        if sheet_favorites_table:
-            delete_favorite_from_sheet(user_id, removed_rose.get('Название', ''))
-
+        delete_favorite_from_sheet(user_id, removed_rose.get('Название', ''))
         bot.send_message(call.message.chat.id, "🔄 Обновлённый список избранного:")
         show_favorites(call.message)
 
@@ -258,29 +254,6 @@ def delete_favorite_from_sheet(user_id, rose_name):
                 return
     except Exception as e:
         logger.error(f"❌ Ошибка удаления из Google Таблицы: {e}")
-
-# ==== ДЕТАЛИ РОЗ ====
-@bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
-def handle_rose_details(call):
-    try:
-        action, user_id, idx = call.data.split("_")
-        user_id = int(user_id)
-        idx = int(idx)
-
-        results = user_search_results.get(user_id, [])
-        if not results or idx >= len(results):
-            bot.answer_callback_query(call.id, "❌ Роза не найдена")
-            return
-
-        rose = results[idx]
-        if action == "care":
-            bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
-        elif action == "history":
-            bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка обработки карточки: {e}")
-        bot.answer_callback_query(call.id, "❌ Ошибка")
 
 # Детали из избранного
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("fav_care_", "fav_history_")))
