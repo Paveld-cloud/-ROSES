@@ -216,21 +216,20 @@ def setup_handlers():
             if any(r.get('Название') == selected_rose.get('Название') for r in user_favorites[user_id]):
                 bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
             else:
-                user_favorites[user_id].append(selected_rose)  # Исправленная строка
+                user_favorites[user_id].append(selected_rose)
                 bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
 
                 # Сохраняем информацию в Google Таблицу
-                save_favorite_to_sheet(call.message, selected_rose)
+                save_favorite_to_sheet(user_id, call.from_user, selected_rose)
         except Exception as e:
             logger.error(f"Ошибка добавления в избранное: {e}")
             bot.answer_callback_query(call.id, "❌ Ошибка")
 
-    def save_favorite_to_sheet(message, rose):
+    def save_favorite_to_sheet(user_id, user, rose):
         try:
             # Получаем данные для записи
-            user_id = message.from_user.id
-            first_name = message.from_user.first_name
-            username = f"@{message.from_user.username}" if message.from_user.username else ""
+            first_name = user.first_name
+            username = f"@{user.username}" if user.username else ""
             date = datetime.now().strftime("%Y-%m-%d %H:%M")
             favorite_name = rose.get('Название', 'Без названия')
 
