@@ -73,14 +73,9 @@ def setup_handlers():
 
     def send_main_menu(chat_id, text):
         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.add("🔎 Поиск", "📚 Каталог")
-        markup.row("📞 Связаться", "📦 Заказать")
+        markup.add("🔎 Поиск")
+        markup.row("📞 Связаться")
         bot.send_message(chat_id, text, parse_mode='HTML', reply_markup=markup)
-
-    @bot.message_handler(func=lambda m: m.text == "📚 Каталог")
-    def handle_catalog(message):
-        for idx, rose in enumerate(cached_roses[:5]):
-            send_rose_card(message.chat.id, rose, idx)
 
     @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
     def handle_search_prompt(message):
@@ -89,10 +84,6 @@ def setup_handlers():
     @bot.message_handler(func=lambda m: m.text == "📞 Связаться")
     def handle_contact(message):
         bot.reply_to(message, "💬 Напишите нам: @your_username")
-
-    @bot.message_handler(func=lambda m: m.text == "📦 Заказать")
-    def handle_order(message):
-        bot.reply_to(message, "🛒 Напишите, какие сорта вас интересуют")
 
     @bot.message_handler(func=lambda message: True)
     def handle_search_text(message):
