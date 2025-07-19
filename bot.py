@@ -5,6 +5,7 @@ import telebot
 from flask import Flask, request
 from google.oauth2.service_account import Credentials
 import gspread
+from datetime import datetime
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -21,10 +22,11 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # Авторизация Google Sheets
 creds = Credentials.from_service_account_info(
     CREDS_JSON,
-    scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
 )
 gs = gspread.authorize(creds)
 sheet = gs.open_by_url(SPREADSHEET_URL).sheet1
+sheet_users = gs.open_by_url(SPREADSHEET_URL).worksheet("Пользователи")
 
 # Кэш данных роз
 cached_roses = []
@@ -60,6 +62,20 @@ def webhook():
     bot.process_new_updates([update])
     return '', 200
 
+# 📥 Логирование запросов пользователей
+def log_user_query(message, query_text):
+    try:
+        sheet_users.append_row([
+            message.from_user.id,
+            message.from_user.first_name,
+            f"@{message.from_user.username}" if message.from_user.username else "",
+            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            query_text
+        ])
+        logger.info(f"✅ Запрос пользователя сохранён: {query_text}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка записи в Google Таблицу: {e}")
+
 # Обработчики
 def setup_handlers():
 
@@ -92,6 +108,9 @@ def setup_handlers():
             send_main_menu(message.chat.id, "🔄 Меню восстановлено.")
             return
 
+        # 💾 Сохраняем запрос пользователя
+        log_user_query(message, query)
+
         results = [r for r in cached_roses if query in r.get('Название', '').lower()]
         if not results:
             bot.send_message(message.chat.id, "❌ Ничего не найдено.")
@@ -101,11 +120,17 @@ def setup_handlers():
             send_rose_card(message.chat.id, rose, idx)
 
     def send_rose_card(chat_id, rose, idx=0):
+        description = ''
+        for key in rose:
+            if key.strip().lower() == 'описание':
+                description = rose[key]
+                break
+
         caption = (
-    f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
-    f"{rose.get('Описание', '')}\n"
-    f"🌹Описание: {rose.get('price', '?')}"
-)
+            f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\n"
+            f"{description}"
+        )
+
         photo_url = rose.get('photo', 'https://example.com/default.jpg')
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(
