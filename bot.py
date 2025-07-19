@@ -186,7 +186,7 @@ def setup_handlers():
             # Получаем результаты поиска пользователя
             results = user_search_results.get(user_id, [])
             if not results or idx >= len(results):
-                bot.answer_callback_query(call.id, "❌ Результат не найден")
+                bot.answer_callback_query(call.id, "❌ Роза не найдена")
                 return
 
             rose = results[idx]
@@ -194,9 +194,10 @@ def setup_handlers():
                 bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
             else:
                 bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
+
         except Exception as e:
             logger.error(f"Ошибка обработки callback: {e}")
-            bot.answer_callback_query(call.id, "Произошла ошибка")
+            bot.answer_callback_query(call.id, "❌ Ошибка")
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("favorite_"))
     def handle_add_to_favorites(call):
@@ -230,13 +231,11 @@ def setup_handlers():
 
     def save_favorite_to_sheet(user_id, user, rose):
         try:
-            # Получаем данные для записи
             first_name = user.first_name
             username = f"@{user.username}" if user.username else ""
             date = datetime.now().strftime("%Y-%m-%d %H:%M")
             favorite_name = rose.get('Название', 'Без названия')
 
-            # Записываем в Google Таблицу (лист "Избранное")
             sheet_favorites = gs.open_by_url(SPREADSHEET_URL).worksheet("Избранное")
             sheet_favorites.append_row([
                 user_id,
@@ -266,6 +265,7 @@ def setup_handlers():
                 bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Не указано')}")
             elif action == "fav_history":
                 bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Не указана')}")
+
         except Exception as e:
             logger.error(f"Ошибка обработки избранного: {e}")
             bot.answer_callback_query(call.id, "❌ Ошибка")
@@ -298,18 +298,12 @@ def setup_handlers():
 
     def delete_favorite_from_sheet(user_id, rose_name):
         try:
-            # Открываем лист "Избранное"
             sheet_favorites = gs.open_by_url(SPREADSHEET_URL).worksheet("Избранное")
-
-            # Получаем все данные из листа
             all_data = sheet_favorites.get_all_values()
-
-            # Проходим по каждой строке и ищем совпадение по user_id и названию розы
-            for row_idx, row in enumerate(all_data[1:], start=1):  # Пропускаем заголовок (строка 1)
-                if str(user_id) == row[0] and rose_name == row[4]:  # Сравниваем ID пользователя и название розы
-                    # Удаляем строку
+            for row_idx, row in enumerate(all_data[1:], start=1):
+                if str(user_id) == row[0] and rose_name == row[4]:
                     sheet_favorites.delete_rows(row_idx)
-                    logger.info(f"✅ Удалена запись из Google Таблицы: {rose_name} (Пользователь: {user_id})")
+                    logger.info(f"✅ Удалено из таблицы: {rose_name} (Пользователь: {user_id})")
                     break
         except Exception as e:
             logger.error(f"❌ Ошибка удаления из Google Таблицы: {e}")
