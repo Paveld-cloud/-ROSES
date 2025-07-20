@@ -1,4 +1,5 @@
 # bot.py
+# bot.py
 import os
 import json
 import logging
@@ -12,9 +13,20 @@ import gspread
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
-CREDS_JSON = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
+def get_env_var(name):
+    value = os.getenv(name)
+    if not value:
+        logger.error(f"❌ Не найдена переменная окружения: {name}")
+        raise RuntimeError(f"Не найдена переменная окружения: {name}")
+    return value
+
+try:
+    BOT_TOKEN = get_env_var("BOT_TOKEN")
+    SPREADSHEET_URL = get_env_var("SPREADSHEET_URL")
+    CREDS_JSON = json.loads(get_env_var("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
+except Exception as e:
+    logger.critical(f"❌ Критическая ошибка инициализации: {e}")
+    raise
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -36,7 +48,8 @@ try:
     sheet_favorites = spreadsheet.worksheet("Избранное")
     logger.info("✅ Авторизация Google Sheets прошла успешно")
 except Exception as e:
-    logger.error(f"❌ Ошибка авторизации: {e}")
+    logger.critical(f"❌ Ошибка авторизации Google Sheets: {e}")
+    raise
 
 # ===== Кэш данных =====
 cached_roses = []
@@ -103,6 +116,18 @@ def start(message):
     markup.row("📞 Связаться", "⭐ Избранное")
     bot.send_message(message.chat.id, "🌹 Добро пожаловать! Напишите название розы.", reply_markup=markup)
 
+@bot.message_handler(commands=['help'])
+def help_command(message):
+    bot.send_message(
+        message.chat.id,
+        "🌹 <b>Помощь по боту</b>\n"
+        "— Введите название розы для поиска.\n"
+        "— Используйте кнопки для просмотра ухода, истории и добавления в избранное.\n"
+        "— Кнопка ⭐ Избранное покажет ваши любимые розы.\n"
+        "— Кнопка 📞 Связаться — для обратной связи.\n",
+        parse_mode='HTML'
+    )
+
 @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
 def search_prompt(message):
     bot.send_message(message.chat.id, "🔍 Введите название розы")
@@ -111,9 +136,15 @@ def search_prompt(message):
 def favorites(message):
     show_favorites(message)
 
+@bot.message_handler(func=lambda m: m.text == "📞 Связаться")
+def contact(message):
+    bot.send_message(message.chat.id, "📞 Для связи напишите: @your_support_username")
+
 @bot.message_handler(func=lambda m: True)
 def search(message):
     query = message.text.strip().lower()
+    if not query or query.startswith('/'):
+        return
     results = [r for r in cached_roses if query in r.get("Название", "").lower()]
     if not results:
         bot.send_message(message.chat.id, "❌ Ничего не найдено.")
@@ -137,7 +168,14 @@ def send_rose_card(chat_id, rose, user_id, idx):
     keyboard.add(
         telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{user_id}_{idx}")
     )
-    bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+    try:
+        if photo_url:
+            bot.send_photo(chat_id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+        else:
+            bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"❌ Ошибка отправки карточки розы: {e}")
+        bot.send_message(chat_id, caption, parse_mode='HTML', reply_markup=keyboard)
 
 def log_found_rose(message, rose):
     try:
@@ -148,54 +186,62 @@ def log_found_rose(message, rose):
             datetime.now().strftime("%Y-%m-%d %H:%M"),
             rose.get("Название", "Неизвестно")
         ])
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось записать пользователя: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(("care_", "history_")))
 def handle_details(call):
-    action, user_id, idx = call.data.split("_")
-    user_id = int(user_id)
-    idx = int(idx)
-    rose_list = user_search_results.get(user_id, [])
-    if idx >= len(rose_list):
-        bot.answer_callback_query(call.id, "❌ Роза не найдена")
-        return
-    rose = rose_list[idx]
-    field = "Уход" if action == "care" else "История"
-    text = rose.get(field, "Нет данных")
-    bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{text}")
+    try:
+        action, user_id, idx = call.data.split("_")
+        user_id = int(user_id)
+        idx = int(idx)
+        rose_list = user_search_results.get(user_id, [])
+        if idx >= len(rose_list):
+            bot.answer_callback_query(call.id, "❌ Роза не найдена")
+            return
+        rose = rose_list[idx]
+        field = "Уход" if action == "care" else "История"
+        text = rose.get(field, "Нет данных")
+        bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{text}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка в handle_details: {e}")
+        bot.answer_callback_query(call.id, "❌ Ошибка обработки запроса")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("fav_"))
 def add_favorite(call):
-    _, user_id, idx = call.data.split("_")
-    user_id = int(user_id)
-    idx = int(idx)
-    rose_list = user_search_results.get(user_id, [])
-    if idx >= len(rose_list):
-        bot.answer_callback_query(call.id, "❌ Роза не найдена")
-        return
-    rose = rose_list[idx]
-    if user_id not in user_favorites:
-        user_favorites[user_id] = []
-    if any(r.get("Название") == rose.get("Название") for r in user_favorites[user_id]):
-        bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
-        return
-    user_favorites[user_id].append(rose)
     try:
-        sheet_favorites.append_row([
-            user_id,
-            call.from_user.first_name,
-            f"@{call.from_user.username}" if call.from_user.username else "",
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
-            rose.get("Название", ""),
-            rose.get("Описание", ""),
-            rose.get("photo", ""),
-            rose.get("Уход", ""),
-            rose.get("История", "")
-        ])
+        _, user_id, idx = call.data.split("_")
+        user_id = int(user_id)
+        idx = int(idx)
+        rose_list = user_search_results.get(user_id, [])
+        if idx >= len(rose_list):
+            bot.answer_callback_query(call.id, "❌ Роза не найдена")
+            return
+        rose = rose_list[idx]
+        if user_id not in user_favorites:
+            user_favorites[user_id] = []
+        if any(r.get("Название") == rose.get("Название") for r in user_favorites[user_id]):
+            bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
+            return
+        user_favorites[user_id].append(rose)
+        try:
+            sheet_favorites.append_row([
+                user_id,
+                call.from_user.first_name,
+                f"@{call.from_user.username}" if call.from_user.username else "",
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                rose.get("Название", ""),
+                rose.get("Описание", ""),
+                rose.get("photo", ""),
+                rose.get("Уход", ""),
+                rose.get("История", "")
+            ])
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения избранного: {e}")
+        bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
     except Exception as e:
-        logger.error(f"❌ Ошибка сохранения избранного: {e}")
-    bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
+        logger.error(f"❌ Ошибка в add_favorite: {e}")
+        bot.answer_callback_query(call.id, "❌ Ошибка добавления в избранное")
 
 def show_favorites(message):
     user_id = message.from_user.id
@@ -212,19 +258,30 @@ def show_favorites(message):
             telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"showcare_{rose.get('Название')}"),
             telebot.types.InlineKeyboardButton("📜 История", callback_data=f"showhist_{rose.get('Название')}")
         )
-        bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+        try:
+            if photo_url:
+                bot.send_photo(message.chat.id, photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
+            else:
+                bot.send_message(message.chat.id, caption, parse_mode='HTML', reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"❌ Ошибка отправки избранного: {e}")
+            bot.send_message(message.chat.id, caption, parse_mode='HTML', reply_markup=keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("showcare_") or call.data.startswith("showhist_"))
 def handle_fav_details(call):
-    prefix, name = call.data.split("_", 1)
-    field = "Уход" if prefix == "showcare" else "История"
-    user_id = call.from_user.id
-    favs = user_favorites.get(user_id, [])
-    for rose in favs:
-        if rose.get("Название") == name:
-            bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}")
-            return
-    bot.answer_callback_query(call.id, "❌ Не найдено")
+    try:
+        prefix, name = call.data.split("_", 1)
+        field = "Уход" if prefix == "showcare" else "История"
+        user_id = call.from_user.id
+        favs = user_favorites.get(user_id, [])
+        for rose in favs:
+            if rose.get("Название") == name:
+                bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}")
+                return
+        bot.answer_callback_query(call.id, "❌ Не найдено")
+    except Exception as e:
+        logger.error(f"❌ Ошибка в handle_fav_details: {e}")
+        bot.answer_callback_query(call.id, "❌ Ошибка обработки запроса")
 
 # ===== Запуск Flask =====
 if __name__ == "__main__":
