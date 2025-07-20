@@ -7,7 +7,6 @@ from flask import Flask, request
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 import gspread
-import threading
 
 # ===== Настройки и логирование =====
 logging.basicConfig(level=logging.INFO)
@@ -39,7 +38,7 @@ sheet_favorites = None
 try:
     creds = Credentials.from_service_account_info(
         CREDS_JSON,
-        scopes=["https://www.googleapis.com/auth/spreadsheets "]
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     gs = gspread.authorize(creds)
     spreadsheet = gs.open_by_url(SPREADSHEET_URL)
@@ -87,17 +86,9 @@ def load_favorites():
 load_roses()
 load_favorites()
 
-# ===== Очистка кэша поиска =====
-def clear_search_cache():
-    user_search_results.clear()
-    threading.Timer(600, clear_search_cache).start()  # каждые 10 минут
-
-clear_search_cache()
-
 # ===== Flask Webhook =====
 app = Flask(__name__)
 WEBHOOK_URL = "https://" + os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
-
 try:
     bot.remove_webhook()
     if WEBHOOK_URL:
@@ -132,7 +123,7 @@ def help_command(message):
         "— Введите название розы для поиска.\n"
         "— Используйте кнопки для просмотра ухода, истории и добавления в избранное.\n"
         "— Кнопка ⭐ Избранное покажет ваши любимые розы.\n"
-        "— Кнопка 📞 Связаться — для обратной связи.",
+        "— Кнопка 📞 Связаться — для обратной связи.\n",
         parse_mode='HTML'
     )
 
@@ -150,9 +141,9 @@ def contact(message):
 
 @bot.message_handler(func=lambda m: True)
 def search(message):
-    if message.text.startswith('/'):
-        return
     query = message.text.strip().lower()
+    if not query or query.startswith('/'):
+        return
     results = [r for r in cached_roses if query in r.get("Название", "").lower()]
     if not results:
         bot.send_message(message.chat.id, "❌ Ничего не найдено.")
@@ -210,7 +201,7 @@ def handle_details(call):
         rose = rose_list[idx]
         field = "Уход" if action == "care" else "История"
         text = rose.get(field, "Нет данных")
-        bot.send_message(call.message.chat.id, f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{text}")
+        bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{text}")
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_details: {e}")
         bot.answer_callback_query(call.id, "❌ Ошибка обработки запроса")
@@ -284,7 +275,7 @@ def handle_fav_details(call):
         favs = user_favorites.get(user_id, [])
         for rose in favs:
             if rose.get("Название") == name:
-                bot.send_message(call.message.chat.id, f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}")
+                bot.send_message(call.message.chat.id, f"{'🪴' if field=='Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}")
                 return
         bot.answer_callback_query(call.id, "❌ Не найдено")
     except Exception as e:
@@ -296,4 +287,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск на порту {port}")
     app.run(host="0.0.0.0", port=port)
-    
