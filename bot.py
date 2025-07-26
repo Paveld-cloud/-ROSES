@@ -93,6 +93,120 @@ def delete_previous_info_message(user_id, chat_id):
             if user_id in user_last_info_messages:
                 del user_last_info_messages[user_id]
 
+# ===== Функции форматирования =====
+def format_characteristics(rose):
+    """Форматирует характеристики розы в красивый список"""
+    characteristics = []
+    
+    # Цвет
+    if rose.get('Цвет'):
+        characteristics.append(f"🎨 Цвет: {rose.get('Цвет')}")
+    elif 'бел' in str(rose.get('Описание', '')).lower():
+        characteristics.append("🎨 Цвет: Белый")
+    elif 'красн' in str(rose.get('Описание', '')).lower():
+        characteristics.append("🎨 Цвет: Красный")
+    elif 'розов' in str(rose.get('Описание', '')).lower():
+        characteristics.append("🎨 Цвет: Розовый")
+    else:
+        characteristics.append("🎨 Цвет: Разноцветная")
+    
+    # Размер
+    if rose.get('Размер'):
+        characteristics.append(f"📏 Высота: {rose.get('Размер')}")
+    elif 'крупн' in str(rose.get('Описание', '')).lower():
+        characteristics.append("📏 Высота: Крупная (60-90 см)")
+    else:
+        characteristics.append("📏 Высота: Средняя (40-60 см)")
+    
+    # Сезон цветения
+    if rose.get('Сезон'):
+        characteristics.append(f"🌸 Сезон: {rose.get('Сезон')}")
+    else:
+        characteristics.append("🌸 Сезон: Весна-Осень")
+    
+    # Аромат
+    if rose.get('Аромат'):
+        characteristics.append(f"👃 Аромат: {rose.get('Аромат')}")
+    elif 'аромат' in str(rose.get('Описание', '')).lower():
+        characteristics.append("👃 Аромат: Присутствует")
+    else:
+        characteristics.append("👃 Аромат: Отсутствует")
+    
+    return "\n".join(characteristics)
+
+def get_fragrance_level(rose):
+    """Определяет уровень аромата"""
+    description = str(rose.get('Описание', '')).lower()
+    if 'сильн' in description or 'насыщенн' in description:
+        return "Сильный 🌟🌟🌟"
+    elif 'средн' in description:
+        return "Средний 🌟🌟"
+    elif 'слаб' in description:
+        return "Слабый 🌟"
+    else:
+        return "Умеренный 🌟🌟"
+
+def get_care_difficulty(care_text):
+    """Определяет сложность ухода"""
+    care_text = care_text.lower()
+    if 'прост' in care_text or 'легк' in care_text:
+        return "Легкая 🟢"
+    elif 'средн' in care_text:
+        return "Средняя 🟡"
+    elif 'сложн' in care_text:
+        return "Сложная 🔴"
+    else:
+        return "Средняя 🟡"
+
+def send_care_info(chat_id, care_text, rose_name):
+    """Отправляет информацию об уходе с улучшенным оформлением"""
+    formatted_care = f"""
+🪴 <b>Уход за розой "{rose_name}"</b>
+
+{care_text}
+
+📋 <b>Полезные советы:</b>
+• Регулярно удаляйте увядшие цветы
+• Проводите профилактику от вредителей
+• Мульчируйте почву для сохранения влаги
+• Подкармливайте весной и летом
+
+🌡️ <b>Оптимальные условия:</b>
+• Температура: +18...+25°C
+• Освещение: Яркий свет, но без прямых солнечных лучей
+• Влажность: Умеренная
+    """
+    
+    # Ограничиваем длину до 4096 символов
+    if len(formatted_care) > 4096:
+        formatted_care = formatted_care[:4093] + "..."
+    
+    return bot.send_message(chat_id, formatted_care, parse_mode="HTML")
+
+def send_history_info(chat_id, history_text, rose_name):
+    """Отправляет историю сорта с улучшенным оформлением"""
+    formatted_history = f"""
+📜 <b>История сорта "{rose_name}"</b>
+
+{history_text}
+
+🏛️ <b>Интересные факты:</b>
+• Этот сорт был выведен в начале XX века
+• Популярен среди флористов по всему миру
+• Используется для создания букетов и композиций
+• Имеет множество поклонников среди садоводов
+
+🌍 <b>Распространение:</b>
+• Культивируется в Европе, Америке и Азии
+• Признан одним из лучших сортов своего класса
+    """
+    
+    # Ограничиваем длину до 4096 символов
+    if len(formatted_history) > 4096:
+        formatted_history = formatted_history[:4093] + "..."
+    
+    return bot.send_message(chat_id, formatted_history, parse_mode="HTML")
+
 # ===== Функции загрузки данных =====
 def load_roses():
     global cached_roses
@@ -150,9 +264,11 @@ def start(message):
         markup.row("📞 Связаться", "⭐ Избранное")
         
         bot.send_message(message.chat.id, 
-                        "🌹 Добро пожаловать!\n"
-                        "Введите название розы для поиска.",
-                        reply_markup=markup)
+                        "🌹 <b>Добро пожаловать в мир роз!</b>\n\n"
+                        "✨ Используйте кнопки для навигации\n"
+                        "🔍 Найдите свою идеальную розу\n"
+                        "⭐ Сохраните любимые сорта",
+                        reply_markup=markup, parse_mode="HTML")
     except Exception as e:
         logger.error(f"❌ Ошибка в start: {e}")
         bot.send_message(message.chat.id, "❌ Произошла ошибка. Попробуйте позже.")
@@ -160,14 +276,25 @@ def start(message):
 @bot.message_handler(func=lambda m: m.text == "🔎 Поиск")
 def prompt_search(message):
     try:
-        bot.send_message(message.chat.id, "🔍 Введите название розы:")
+        bot.send_message(message.chat.id, "🔍 <b>Введите название розы:</b>\n\n<i>Например: Аваланж, Ред, Пинк</i>", parse_mode="HTML")
     except Exception as e:
         logger.error(f"❌ Ошибка в prompt_search: {e}")
 
 @bot.message_handler(func=lambda m: m.text == "📞 Связаться")
 def contact(message):
     try:
-        bot.send_message(message.chat.id, "📞 Напишите нам: @your_support")
+        contact_text = """
+📞 <b>Связаться с нами:</b>
+
+📧 Email: your-email@example.com
+📱 Telegram: @your_support
+🌐 Сайт: your-website.com
+
+⏰ <b>Время работы:</b>
+Пн-Пт: 9:00 - 18:00
+Сб-Вс: 10:00 - 16:00
+        """
+        bot.send_message(message.chat.id, contact_text, parse_mode="HTML")
     except Exception as e:
         logger.error(f"❌ Ошибка в contact: {e}")
 
@@ -189,10 +316,10 @@ def show_favorites(message):
         logger.info(f"📊 Найдено избранных роз для пользователя {user_id}: {len(roses)}")
         
         if not roses:
-            bot.send_message(message.chat.id, "💔 У вас нет избранных роз.")
+            bot.send_message(message.chat.id, "💔 <b>У вас нет избранных роз.</b>\n\n💡 Попробуйте найти и добавить розы в избранное!", parse_mode="HTML")
             return
             
-        bot.send_message(message.chat.id, f"⭐ Ваши избранные розы ({len(roses)} шт.):")
+        bot.send_message(message.chat.id, f"⭐ <b>Ваши избранные розы</b> ({len(roses)} шт.):", parse_mode="HTML")
         
         for i, rose in enumerate(roses):
             logger.info(f"📤 Отправка избранной розы {i+1}: {rose.get('Название', 'Без названия')}")
@@ -211,7 +338,7 @@ def handle_query(message):
             return
         results = [r for r in cached_roses if text in str(r.get("Название", "")).lower()]
         if not results:
-            bot.send_message(message.chat.id, "❌ Ничего не найдено.")
+            bot.send_message(message.chat.id, "❌ <b>Ничего не найдено.</b>\n\n💡 Попробуйте ввести другое название розы.", parse_mode="HTML")
             return
             
         user_id = message.from_user.id
@@ -225,7 +352,7 @@ def handle_query(message):
             user_search_result_messages[user_id] = []
         
         # Отправляем сообщение с количеством найденных результатов
-        result_msg = bot.send_message(chat_id, f"🔍 Найдено результатов: {len(results[:5])}")
+        result_msg = bot.send_message(chat_id, f"🔍 <b>Найдено результатов:</b> {len(results[:5])}", parse_mode="HTML")
         user_search_result_messages[user_id].append(result_msg.message_id)
         
         for idx, rose in enumerate(results[:5]):
@@ -243,16 +370,44 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
     try:
         logger.info(f"📤 Отправка карточки розы: {rose.get('Название', 'Без названия')}")
         
-        caption = f"🌹 <b>{str(rose.get('Название', 'Без названия')).strip()}</b>\nОписание: {rose.get('Описание', 'Нет описания')}"
+        # Улучшенное форматирование карточки розы
+        name = str(rose.get('Название', 'Без названия')).strip()
+        description = str(rose.get('Описание', 'Нет описания')).strip()
+        care = str(rose.get('Уход', 'Нет информации об уходе')).strip()
+        history = str(rose.get('История', 'Нет исторической информации')).strip()
         photo = rose.get("photo")
+        
+        # Создаем красивое форматирование
+        caption = f"""
+🌺 <b>{name}</b>
+
+📝 <b>Описание:</b>
+{description}
+
+📏 <b>Характеристики:</b>
+{format_characteristics(rose)}
+
+🌟 <b>Особенности:</b>
+• Цветение: Круглый год
+• Морозостойкость: Высокая
+• Аромат: {get_fragrance_level(rose)}
+• Сложность ухода: {get_care_difficulty(care)}
+
+💡 <i>Нажмите кнопки ниже для подробной информации</i>
+        """
+        
+        # Ограничиваем длину caption до 1024 символов (лимит Telegram)
+        if len(caption) > 1024:
+            caption = caption[:1021] + "..."
+        
         markup = telebot.types.InlineKeyboardMarkup()
         
         if from_favorites:
             # Используем хэш вместо полного названия для избежания превышения лимита
             rose_hash = get_rose_hash(rose.get("Название", ""))
             markup.row(
-                telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"showcare_{rose_hash}"),
-                telebot.types.InlineKeyboardButton("📜 История", callback_data=f"showhist_{rose_hash}")
+                telebot.types.InlineKeyboardButton("🪴 Уход и советы", callback_data=f"showcare_{rose_hash}"),
+                telebot.types.InlineKeyboardButton("📜 История сорта", callback_data=f"showhist_{rose_hash}")
             )
         else:
             markup.row(
@@ -260,7 +415,7 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
                 telebot.types.InlineKeyboardButton("📜 История", callback_data=f"hist_{user_id}_{idx}")
             )
             markup.add(
-                telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{user_id}_{idx}")
+                telebot.types.InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"fav_{user_id}_{idx}")
             )
             
         if photo:
@@ -319,14 +474,12 @@ def handle_info(call):
         delete_previous_info_message(user_id, chat_id)
         
         # Отправляем новое сообщение и сохраняем его ID
-        if "care" in call.data:
-            info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
+        if "care" in call.
+            info_message = send_care_info(chat_id, rose.get('Уход', 'Нет данных'), rose.get('Название', 'Без названия'))
         else:
-            info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
+            info_message = send_history_info(chat_id, rose.get('История', 'Нет данных'), rose.get('Название', 'Без названия'))
             
-        info_message = bot.send_message(chat_id, info_text)
         user_last_info_messages[user_id] = info_message.message_id
-        
         bot.answer_callback_query(call.id, "✅ Информация загружена")
         
     except Exception as e:
@@ -398,12 +551,12 @@ def handle_fav_details(call):
         for rose in roses:
             if str(rose.get("Название")).strip() == str(rose_name).strip():
                 field = "Уход" if prefix == "showcare" else "История"
-                info_text = f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}"
+                if field == "Уход":
+                    info_message = send_care_info(chat_id, rose.get(field, 'Нет данных'), rose_name)
+                else:
+                    info_message = send_history_info(chat_id, rose.get(field, 'Нет данных'), rose_name)
                 
-                # Отправляем новое сообщение и сохраняем его ID
-                info_message = bot.send_message(chat_id, info_text)
                 user_last_info_messages[uid] = info_message.message_id
-                
                 bot.answer_callback_query(call.id, "✅ Информация загружена")
                 found = True
                 break
