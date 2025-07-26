@@ -65,6 +65,7 @@ def load_favorites():
             }
             user_favorites.setdefault(uid, []).append(rose)
         logger.info("✅ Избранное загружено")
+        logger.info(f"📊 Загружено избранных записей: {len(all_rows)}")
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки избранного: {e}")
 
@@ -116,15 +117,25 @@ def contact(message):
 @bot.message_handler(func=lambda m: m.text == "⭐ Избранное")
 def show_favorites(message):
     try:
+        logger.info(f"📥 Пользователь {message.from_user.id} открыл избранное")
         user_id = message.from_user.id
         roses = user_favorites.get(user_id, [])
+        
+        logger.info(f"📊 Найдено избранных роз для пользователя {user_id}: {len(roses)}")
+        
         if not roses:
             bot.send_message(message.chat.id, "💔 У вас нет избранных роз.")
             return
-        for rose in roses:
+            
+        bot.send_message(message.chat.id, f"⭐ Ваши избранные розы ({len(roses)} шт.):")
+        
+        for i, rose in enumerate(roses):
+            logger.info(f"📤 Отправка избранной розы {i+1}: {rose.get('Название', 'Без названия')}")
             send_rose_card(message.chat.id, rose, from_favorites=True)
+            
     except Exception as e:
-        logger.error(f"❌ Ошибка в show_favorites: {e}")
+        logger.error(f"❌ Ошибка в show_favorites для пользователя {message.from_user.id}: {e}")
+        logger.error(f"❌ Трассировка ошибки: {traceback.format_exc()}")
         bot.send_message(message.chat.id, "❌ Произошла ошибка при загрузке избранного.")
 
 # ===== Поиск =====
@@ -149,9 +160,12 @@ def handle_query(message):
 
 def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
     try:
-        caption = f"🌹 <b>{rose.get('Название')}</b>\nОписание: {rose.get('Описание')}"
+        logger.info(f"📤 Отправка карточки розы: {rose.get('Название', 'Без названия')}")
+        
+        caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\nОписание: {rose.get('Описание', 'Нет описания')}"
         photo = rose.get("photo")
         markup = telebot.types.InlineKeyboardMarkup()
+        
         if from_favorites:
             name_encoded = urllib.parse.quote_plus(rose.get("Название", ""))
             markup.row(
@@ -166,16 +180,22 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
             markup.add(
                 telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{user_id}_{idx}")
             )
+            
         if photo:
             # Проверяем, что photo - валидный URL
             if isinstance(photo, str) and (photo.startswith('http://') or photo.startswith('https://')):
+                logger.info(f"📷 Отправка фото: {photo}")
                 bot.send_photo(chat_id, photo, caption=caption, parse_mode="HTML", reply_markup=markup)
             else:
+                logger.warning(f"⚠️ Невалидный URL фото: {photo}")
                 bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=markup)
         else:
+            logger.info("📝 Отправка без фото")
             bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=markup)
+            
     except Exception as e:
         logger.error(f"❌ Ошибка в send_rose_card: {e}")
+        logger.error(f"❌ Данные розы: {rose}")
         try:
             bot.send_message(chat_id, "❌ Ошибка при отправке карточки розы.")
         except:
@@ -227,7 +247,7 @@ def handle_info(call):
         delete_previous_info_message(user_id, chat_id)
         
         # Отправляем новое сообщение и сохраняем его ID
-        if "care" in call.data:
+        if "care" in call.
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
@@ -295,9 +315,13 @@ def handle_fav_details(call):
         chat_id = call.message.chat.id
         roses = user_favorites.get(uid, [])
         
+        logger.info(f"📥 Запрос деталей избранного от пользователя {uid}, роза: {name}")
+        logger.info(f"📊 Доступные избранные розы: {[r.get('Название') for r in roses]}")
+        
         # Удаляем предыдущее информационное сообщение
         delete_previous_info_message(uid, chat_id)
         
+        found = False
         for rose in roses:
             if rose["Название"] == name:
                 field = "Уход" if prefix == "showcare" else "История"
@@ -308,8 +332,13 @@ def handle_fav_details(call):
                 user_last_info_messages[uid] = info_message.message_id
                 
                 bot.answer_callback_query(call.id, "✅ Информация загружена")
-                return
-        bot.answer_callback_query(call.id, "❌ Роза не найдена")
+                found = True
+                break
+                
+        if not found:
+            bot.answer_callback_query(call.id, "❌ Роза не найдена в избранном")
+            logger.warning(f"⚠️ Роза '{name}' не найдена в избранном пользователя {uid}")
+            
     except Exception as e:
         logger.error(f"❌ Ошибка при показе избранного: {e}")
         try:
@@ -317,14 +346,9 @@ def handle_fav_details(call):
         except:
             pass
 
-# ===== Очистка устаревших данных (опционально) =====
-def cleanup_old_search_results():
-    """Очистка старых результатов поиска для предотвращения переполнения памяти"""
-    # Можно реализовать очистку по времени или по количеству записей
-    pass
-
 # ===== Запуск =====
 if __name__ == "__main__":
+    import traceback
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск на порту {port}")
     app.run(host="0.0.0.0", port=port)
