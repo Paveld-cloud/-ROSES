@@ -105,27 +105,8 @@ def home():
 
 @app.route("/app")
 def web_app():
-    """Главная страница мини-приложения"""
-    return render_template('index.html')
-
-@app.route("/app/roses")
-def get_roses():
-    """API endpoint для получения списка роз"""
-    try:
-        # Возвращаем список роз в формате JSON
-        roses_data = []
-        for rose in cached_roses:
-            roses_data.append({
-                'name': rose.get('Название', ''),
-                'description': rose.get('Описание', ''),
-                'photo': rose.get('photo', ''),
-                'care': rose.get('Уход', ''),
-                'history': rose.get('История', '')
-            })
-        return {'roses': roses_data, 'count': len(roses_data)}
-    except Exception as e:
-        logger.error(f"❌ Ошибка API /app/roses: {e}")
-        return {'error': str(e)}, 500
+    """Главная страница мини-приложения - только избранное"""
+    return render_template('favorites.html')
 
 @app.route("/app/favorites/<int:user_id>")
 def get_user_favorites(user_id):
@@ -135,39 +116,15 @@ def get_user_favorites(user_id):
         favorites_data = []
         for rose in favorites:
             favorites_data.append({
-                'name': rose.get('Название', ''),
-                'description': rose.get('Описание', ''),
-                'photo': rose.get('photo', ''),
-                'care': rose.get('Уход', ''),
-                'history': rose.get('История', '')
-            })
-        return {'favorites': favorites_data, 'count': len(favorites_data)}
-    except Exception as e:
-        logger.error(f"❌ Ошибка API /app/favorites/{user_id}: {e}")
-        return {'error': str(e)}, 500
-
-@app.route("/app/search")
-def search_roses():
-    """API endpoint для поиска роз"""
-    query = request.args.get('q', '').lower().strip()
-    try:
-        if not query:
-            results = cached_roses[:20]  # Первые 20 роз
-        else:
-            results = [r for r in cached_roses if query in str(r.get("Название", "")).lower()][:20]
-        
-        results_data = []
-        for rose in results:
-            results_data.append({
                 'name': str(rose.get('Название', '')).strip(),
                 'description': str(rose.get('Описание', '')).strip(),
                 'photo': str(rose.get('photo', '')).strip(),
                 'care': str(rose.get('Уход', '')).strip(),
                 'history': str(rose.get('История', '')).strip()
             })
-        return {'results': results_data, 'count': len(results_data)}
+        return {'favorites': favorites_data, 'count': len(favorites_data)}
     except Exception as e:
-        logger.error(f"❌ Ошибка API /app/search: {e}")
+        logger.error(f"❌ Ошибка API /app/favorites/{user_id}: {e}")
         return {'error': str(e)}, 500
 
 @app.route("/static/<path:path>")
@@ -219,12 +176,12 @@ def start(message):
         markup.add("🔎 Поиск")
         markup.row("📞 Связаться", "⭐ Избранное")
         # Добавляем кнопку для мини-приложения
-        web_app_btn = telebot.types.KeyboardButton("📱 Мини-приложение", web_app=telebot.types.WebAppInfo(WEB_APP_URL))
+        web_app_btn = telebot.types.KeyboardButton("⭐ Избранное", web_app=telebot.types.WebAppInfo(WEB_APP_URL))
         markup.add(web_app_btn)
         
         bot.send_message(message.chat.id, 
                         "🌹 Добро пожаловать!\n"
-                        "Выберите действие или откройте мини-приложение для расширенных возможностей.",
+                        "Используйте кнопки для навигации.",
                         reply_markup=markup)
     except Exception as e:
         logger.error(f"❌ Ошибка в start: {e}")
@@ -235,9 +192,9 @@ def open_app(message):
     """Команда для открытия мини-приложения"""
     try:
         bot.send_message(message.chat.id, 
-                        "📱 Открываю мини-приложение...",
+                        "📱 Открываю избранное...",
                         reply_markup=telebot.types.ReplyKeyboardMarkup(resize_keyboard=True).add(
-                            telebot.types.KeyboardButton("📱 Открыть приложение", web_app=telebot.types.WebAppInfo(WEB_APP_URL))
+                            telebot.types.KeyboardButton("⭐ Открыть избранное", web_app=telebot.types.WebAppInfo(WEB_APP_URL))
                         ))
     except Exception as e:
         logger.error(f"❌ Ошибка в open_app: {e}")
