@@ -135,7 +135,7 @@ def add_to_favorites():
         chat_id = data.get('chat_id')
         rose_data = data.get('rose')
         
-        if not chat_id or not rose_data:
+        if not chat_id or not rose_
             return {'error': 'Не переданы необходимые данные'}, 400
             
         # Добавляем в Google Sheets
@@ -310,7 +310,7 @@ def handle_info(call):
         chat_id = call.message.chat.id
         
         # Отправляем информацию
-        if "care" in call.data:
+        if "care" in call.
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
