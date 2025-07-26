@@ -22,6 +22,37 @@ async function loadFavorites(chatId) {
     }
 }
 
+// Функция добавления в избранное
+async function addToFavorites(chatId, roseData) {
+    try {
+        const response = await fetch('/app/favorites/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                chat_id: chatId,
+                first_name: tg.initDataUnsafe.user.first_name || '',
+                username: tg.initDataUnsafe.user.username || '',
+                rose: roseData
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            tg.showAlert('✅ Добавлено в избранное!');
+            // Обновляем список
+            loadFavorites(chatId);
+        } else {
+            tg.showAlert('❌ Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        tg.showAlert('❌ Ошибка добавления в избранное');
+    }
+}
+
 function showLoading(container) {
     container.innerHTML = '<div class="loading">Загрузка избранного...</div>';
 }
@@ -32,7 +63,7 @@ function showError(container, message) {
 
 function displayFavorites(favorites, container) {
     if (favorites.length === 0) {
-        container.innerHTML = '<div class="error">Избранных роз нет</div>';
+        container.innerHTML = '<div class="empty-state">💔 У вас нет избранных роз</div>';
         return;
     }
     
@@ -42,9 +73,23 @@ function displayFavorites(favorites, container) {
             <div class="rose-info">
                 <h3 class="rose-name">${rose.name}</h3>
                 <p class="rose-description">${truncateText(rose.description, 100)}</p>
+                <div class="rose-actions">
+                    <button class="btn btn-care" onclick="showCare('${rose.id}')">🪴 Уход</button>
+                    <button class="btn btn-history" onclick="showHistory('${rose.id}')">📜 История</button>
+                </div>
             </div>
         </div>
     `).join('');
+}
+
+function showCare(roseId) {
+    // Здесь можно реализовать показ деталей ухода
+    tg.showAlert('🪴 Функция ухода будет реализована позже');
+}
+
+function showHistory(roseId) {
+    // Здесь можно реализовать показ истории
+    tg.showAlert('📜 Функция истории будет реализована позже');
 }
 
 function truncateText(text, maxLength) {
@@ -52,22 +97,7 @@ function truncateText(text, maxLength) {
     return text.substring(0, maxLength) + '...';
 }
 
-// Обработчик события загрузки страницы
-document.addEventListener('DOMContentLoaded', function() {
-    // Получаем ID чата из Telegram Web App
-    const tg = window.Telegram.WebApp;
-    if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-        const chatId = tg.initDataUnsafe.user.id;
-        loadFavorites(chatId);
-    } else {
-        // Если не удалось получить из initData, попробуем из URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const chatId = urlParams.get('chat_id');
-        if (chatId) {
-            loadFavorites(chatId);
-        } else {
-            document.getElementById('favoritesList').innerHTML = 
-                '<div class="error">Не удалось получить данные пользователя</div>';
-        }
-    }
-});
+// Глобальные функции для доступа из HTML
+window.showCare = showCare;
+window.showHistory = showHistory;
+window.addToFavorites = addToFavorites;
