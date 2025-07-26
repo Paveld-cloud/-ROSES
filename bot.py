@@ -474,7 +474,7 @@ def handle_info(call):
         delete_previous_info_message(user_id, chat_id)
         
         # Отправляем новое сообщение и сохраняем его ID
-        if "care" in call.
+        if "care" in call.data:
             info_message = send_care_info(chat_id, rose.get('Уход', 'Нет данных'), rose.get('Название', 'Без названия'))
         else:
             info_message = send_history_info(chat_id, rose.get('История', 'Нет данных'), rose.get('Название', 'Без названия'))
