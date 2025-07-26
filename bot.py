@@ -66,10 +66,11 @@ def load_favorites():
         for row in all_rows:
             try:
                 # Проверяем, что это не заголовок
-                if str(row.get('ID', '')).lower().strip() in ['id', 'user_id', '']:
+                id_value = str(row.get('ID', '')).strip()
+                if id_value.lower() in ['id', 'user_id', ''] or not id_value:
                     continue
                     
-                uid = int(row['ID'])
+                uid = int(id_value)
                 rose = {
                     "Название": str(row.get('Название', '')).strip() if row.get('Название') else 'Без названия',
                     "Описание": str(row.get('Описание', '')).strip() if row.get('Описание') else '',
@@ -122,15 +123,22 @@ def web_app():
     """Главная страница мини-приложения - только избранное"""
     return render_template('favorites.html')
 
-@app.route("/app/favorites/<int:user_id>")
-def get_user_favorites(user_id):
-    """API endpoint для получения избранных роз пользователя"""
+@app.route("/app/favorites")
+def get_user_favorites():
+    """API endpoint для получения избранных роз пользователя по chat_id"""
     try:
-        logger.info(f"📥 Запрос избранного для пользователя {user_id}")
+        # Получаем chat_id из query параметров
+        chat_id = request.args.get('chat_id')
+        if not chat_id:
+            logger.warning("❌ Не передан chat_id")
+            return {'error': 'Не передан chat_id'}, 400
+            
+        chat_id = int(chat_id)
+        logger.info(f"📥 Запрос избранного для chat_id {chat_id}")
         logger.info(f"📊 Доступные пользователи в избранном: {list(user_favorites.keys())}")
         
-        favorites = user_favorites.get(user_id, [])
-        logger.info(f"📊 Найдено избранных роз для пользователя {user_id}: {len(favorites)}")
+        favorites = user_favorites.get(chat_id, [])
+        logger.info(f"📊 Найдено избранных роз для chat_id {chat_id}: {len(favorites)}")
         
         favorites_data = []
         for rose in favorites:
@@ -143,7 +151,7 @@ def get_user_favorites(user_id):
             })
         return {'favorites': favorites_data, 'count': len(favorites_data)}
     except Exception as e:
-        logger.error(f"❌ Ошибка API /app/favorites/{user_id}: {e}")
+        logger.error(f"❌ Ошибка API /app/favorites: {e}")
         return {'error': str(e)}, 500
 
 @app.route("/static/<path:path>")
@@ -245,9 +253,9 @@ def show_favorites(message):
         # Удаляем предыдущее информационное сообщение
         delete_previous_info_message(user_id, chat_id)
         
-        roses = user_favorites.get(user_id, [])
+        roses = user_favorites.get(chat_id, [])  # Используем chat_id вместо user_id
         
-        logger.info(f"📊 Найдено избранных роз для пользователя {user_id}: {len(roses)}")
+        logger.info(f"📊 Найдено избранных роз для chat_id {chat_id}: {len(roses)}")
         
         if not roses:
             bot.send_message(message.chat.id, "💔 У вас нет избранных роз.")
@@ -410,15 +418,16 @@ def handle_favorite(call):
             return
             
         rose = user_results[int(idx)]
-        if user_id not in user_favorites:
-            user_favorites[user_id] = []
-        if any(str(r.get("Название")).strip() == str(rose.get("Название")).strip() for r in user_favorites[user_id]):
+        chat_id = call.message.chat.id  # Получаем chat_id
+        if chat_id not in user_favorites:
+            user_favorites[chat_id] = []
+        if any(str(r.get("Название")).strip() == str(rose.get("Название")).strip() for r in user_favorites[chat_id]):
             bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
             return
-        user_favorites[user_id].append(rose)
+        user_favorites[chat_id].append(rose)
         try:
             sheet_favorites.append_row([
-                user_id,
+                chat_id,  # Используем chat_id вместо user_id
                 call.from_user.first_name,
                 f"@{call.from_user.username}" if call.from_user.username else "",
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -448,9 +457,9 @@ def handle_fav_details(call):
         rose_name = get_rose_name_by_hash(rose_hash)
         uid = call.from_user.id
         chat_id = call.message.chat.id
-        roses = user_favorites.get(uid, [])
+        roses = user_favorites.get(chat_id, [])  # Используем chat_id
         
-        logger.info(f"📥 Запрос деталей избранного от пользователя {uid}, роза hash: {rose_hash}")
+        logger.info(f"📥 Запрос деталей избранного от chat_id {chat_id}, роза hash: {rose_hash}")
         
         # Удаляем предыдущее информационное сообщение
         delete_previous_info_message(uid, chat_id)
@@ -471,7 +480,7 @@ def handle_fav_details(call):
                 
         if not found:
             bot.answer_callback_query(call.id, "❌ Роза не найдена в избранном")
-            logger.warning(f"⚠️ Роза с hash '{rose_hash}' не найдена в избранном пользователя {uid}")
+            logger.warning(f"⚠️ Роза с hash '{rose_hash}' не найдена в избранном chat_id {chat_id}")
             
     except Exception as e:
         logger.error(f"❌ Ошибка при показе избранного: {e}")
