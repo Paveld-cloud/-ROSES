@@ -53,6 +53,7 @@ def load_roses():
     try:
         cached_roses = sheet_roses.get_all_records()
         logger.info("✅ Розы загружены")
+        logger.info(f"📊 Загружено роз: {len(cached_roses)}")
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки роз: {e}")
         cached_roses = []
@@ -61,16 +62,21 @@ def load_favorites():
     try:
         all_rows = sheet_favorites.get_all_records()
         for row in all_rows:
-            uid = int(row['ID'])
-            rose = {
-                "Название": row['Название'],
-                "Описание": row['Описание'],
-                "photo": row['photo'],
-                "Уход": row['Уход'],
-                "История": row['История']
-            }
-            user_favorites.setdefault(uid, []).append(rose)
+            try:
+                uid = int(row['ID'])
+                rose = {
+                    "Название": str(row.get('Название', '')).strip() if row.get('Название') else 'Без названия',
+                    "Описание": str(row.get('Описание', '')).strip() if row.get('Описание') else '',
+                    "photo": str(row.get('photo', '')).strip() if row.get('photo') else '',
+                    "Уход": str(row.get('Уход', '')).strip() if row.get('Уход') else '',
+                    "История": str(row.get('История', '')).strip() if row.get('История') else ''
+                }
+                user_favorites.setdefault(uid, []).append(rose)
+            except Exception as row_error:
+                logger.warning(f"⚠️ Ошибка обработки строки избранного: {row_error}")
+                continue
         logger.info("✅ Избранное загружено")
+        logger.info(f"📊 Загружено избранных записей: {len(all_rows)}")
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки избранного: {e}")
 
@@ -109,11 +115,16 @@ def get_roses_api():
     """API endpoint для получения списка роз"""
     try:
         # Получаем параметры поиска
-        query = request.args.get('search', '').lower()
+        query = request.args.get('search', '').lower().strip()
         
         # Фильтруем розы
         if query:
-            filtered_roses = [r for r in cached_roses if query in r.get("Название", "").lower()]
+            # Убираем лишние пробелы при сравнении
+            filtered_roses = []
+            for r in cached_roses:
+                name = str(r.get("Название", "")).strip().lower()
+                if query in name:
+                    filtered_roses.append(r)
         else:
             filtered_roses = cached_roses[:50]  # Ограничиваем для производительности
         
@@ -121,14 +132,15 @@ def get_roses_api():
         roses_data = []
         for rose in filtered_roses:
             roses_data.append({
-                'id': hashlib.md5(rose.get('Название', '').encode()).hexdigest()[:10],
-                'name': rose.get('Название', 'Без названия'),
-                'description': rose.get('Описание', 'Нет описания')[:200] + '...' if len(rose.get('Описание', '')) > 200 else rose.get('Описание', 'Нет описания'),
-                'photo': rose.get('photo', ''),
-                'care': rose.get('Уход', 'Нет информации об уходе'),
-                'history': rose.get('История', 'Нет исторической информации')
+                'id': hashlib.md5(str(rose.get('Название', '')).encode()).hexdigest()[:10],
+                'name': str(rose.get('Название', 'Без названия')).strip(),
+                'description': str(rose.get('Описание', 'Нет описания'))[:200] + '...' if len(str(rose.get('Описание', ''))) > 200 else str(rose.get('Описание', 'Нет описания')),
+                'photo': str(rose.get('photo', '')),
+                'care': str(rose.get('Уход', 'Нет информации об уходе')),
+                'history': str(rose.get('История', 'Нет исторической информации'))
             })
         
+        logger.info(f"✅ API вернул {len(roses_data)} роз")
         return jsonify({'roses': roses_data, 'count': len(roses_data)})
     except Exception as e:
         logger.error(f"❌ Ошибка API /api/roses: {e}")
@@ -138,16 +150,17 @@ def get_roses_api():
 def get_rose_detail(rose_id):
     """API endpoint для получения детальной информации о розе"""
     try:
-        # Ищем розу по ID (в реальном приложении лучше использовать настоящий ID)
+        # Ищем розу по ID
         for rose in cached_roses:
-            if hashlib.md5(rose.get('Название', '').encode()).hexdigest()[:10] == rose_id:
+            rose_name = str(rose.get('Название', '')).strip()
+            if hashlib.md5(rose_name.encode()).hexdigest()[:10] == rose_id:
                 return jsonify({
                     'id': rose_id,
-                    'name': rose.get('Название', 'Без названия'),
-                    'description': rose.get('Описание', 'Нет описания'),
-                    'photo': rose.get('photo', ''),
-                    'care': rose.get('Уход', 'Нет информации об уходе'),
-                    'history': rose.get('История', 'Нет исторической информации')
+                    'name': rose_name,
+                    'description': str(rose.get('Описание', 'Нет описания')),
+                    'photo': str(rose.get('photo', '')),
+                    'care': str(rose.get('Уход', 'Нет информации об уходе')),
+                    'history': str(rose.get('История', 'Нет исторической информации'))
                 })
         
         return jsonify({'error': 'Роза не найдена'}), 404
@@ -163,12 +176,12 @@ def get_user_favorites(user_id):
         favorites_data = []
         for rose in favorites:
             favorites_data.append({
-                'id': hashlib.md5(rose.get('Название', '').encode()).hexdigest()[:10],
-                'name': rose.get('Название', 'Без названия'),
-                'description': rose.get('Описание', 'Нет описания')[:200] + '...' if len(rose.get('Описание', '')) > 200 else rose.get('Описание', 'Нет описания'),
-                'photo': rose.get('photo', ''),
-                'care': rose.get('Уход', 'Нет информации об уходе'),
-                'history': rose.get('История', 'Нет исторической информации')
+                'id': hashlib.md5(str(rose.get('Название', '')).encode()).hexdigest()[:10],
+                'name': str(rose.get('Название', 'Без названия')).strip(),
+                'description': str(rose.get('Описание', 'Нет описания'))[:200] + '...' if len(str(rose.get('Описание', ''))) > 200 else str(rose.get('Описание', 'Нет описания')),
+                'photo': str(rose.get('photo', '')),
+                'care': str(rose.get('Уход', 'Нет информации об уходе')),
+                'history': str(rose.get('История', 'Нет исторической информации'))
             })
         return jsonify({'favorites': favorites_data, 'count': len(favorites_data)})
     except Exception as e:
@@ -187,7 +200,7 @@ def webhook():
 
 # ===== Функции для хэширования и удаления сообщений =====
 def get_rose_hash(rose_name):
-    hash_object = hashlib.md5(rose_name.encode())
+    hash_object = hashlib.md5(str(rose_name).encode())
     hash_hex = hash_object.hexdigest()[:10]
     rose_name_hashes[hash_hex] = rose_name
     return hash_hex
@@ -301,7 +314,7 @@ def handle_query(message):
         text = message.text.strip().lower()
         if not text or text.startswith("/"):
             return
-        results = [r for r in cached_roses if text in r["Название"].lower()]
+        results = [r for r in cached_roses if text in str(r.get("Название", "")).lower()]
         if not results:
             bot.send_message(message.chat.id, "❌ Ничего не найдено.")
             return
@@ -335,7 +348,7 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
     try:
         logger.info(f"📤 Отправка карточки розы: {rose.get('Название', 'Без названия')}")
         
-        caption = f"🌹 <b>{rose.get('Название', 'Без названия')}</b>\nОписание: {rose.get('Описание', 'Нет описания')}"
+        caption = f"🌹 <b>{str(rose.get('Название', 'Без названия')).strip()}</b>\nОписание: {rose.get('Описание', 'Нет описания')}"
         photo = rose.get("photo")
         markup = telebot.types.InlineKeyboardMarkup()
         
@@ -386,7 +399,7 @@ def log_search(message, rose_name):
             message.from_user.first_name,
             f"@{message.from_user.username}" if message.from_user.username else "",
             datetime.now().strftime("%Y-%m-%d %H:%M"),
-            rose_name
+            str(rose_name).strip()
         ])
     except Exception as e:
         logger.warning(f"⚠️ Ошибка записи поиска: {e}")
@@ -443,7 +456,7 @@ def handle_favorite(call):
         rose = user_results[int(idx)]
         if user_id not in user_favorites:
             user_favorites[user_id] = []
-        if any(r["Название"] == rose["Название"] for r in user_favorites[user_id]):
+        if any(str(r.get("Название")).strip() == str(rose.get("Название")).strip() for r in user_favorites[user_id]):
             bot.answer_callback_query(call.id, "⚠️ Уже в избранном")
             return
         user_favorites[user_id].append(rose)
@@ -453,11 +466,11 @@ def handle_favorite(call):
                 call.from_user.first_name,
                 f"@{call.from_user.username}" if call.from_user.username else "",
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
-                rose["Название"],
-                rose["Описание"],
-                rose["photo"],
-                rose["Уход"],
-                rose["История"]
+                str(rose.get("Название", "")).strip(),
+                str(rose.get("Описание", "")).strip(),
+                str(rose.get("photo", "")).strip(),
+                str(rose.get("Уход", "")).strip(),
+                str(rose.get("История", "")).strip()
             ])
             bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
         except Exception as e:
@@ -486,7 +499,7 @@ def handle_fav_details(call):
         
         found = False
         for rose in roses:
-            if rose["Название"] == rose_name:
+            if str(rose.get("Название")).strip() == str(rose_name).strip():
                 field = "Уход" if prefix == "showcare" else "История"
                 info_text = f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}"
                 
