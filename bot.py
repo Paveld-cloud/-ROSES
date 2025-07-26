@@ -135,7 +135,6 @@ def show_favorites(message):
             
     except Exception as e:
         logger.error(f"❌ Ошибка в show_favorites для пользователя {message.from_user.id}: {e}")
-        logger.error(f"❌ Трассировка ошибки: {traceback.format_exc()}")
         bot.send_message(message.chat.id, "❌ Произошла ошибка при загрузке избранного.")
 
 # ===== Поиск =====
@@ -247,7 +246,7 @@ def handle_info(call):
         delete_previous_info_message(user_id, chat_id)
         
         # Отправляем новое сообщение и сохраняем его ID
-        if "care" in call.
+        if "care" in call.data:  # Исправлено: была синтаксическая ошибка
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
@@ -348,7 +347,6 @@ def handle_fav_details(call):
 
 # ===== Запуск =====
 if __name__ == "__main__":
-    import traceback
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Запуск на порту {port}")
     app.run(host="0.0.0.0", port=port)
