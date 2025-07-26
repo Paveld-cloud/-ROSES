@@ -258,7 +258,7 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None):
         
         # Добавляем кнопку "Добавить в избранное"
         markup.add(
-            telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{chat_id}_{idx}")
+            telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{User_id}_{idx}")
         )
         
         if photo:
