@@ -9,6 +9,7 @@ from google.oauth2.service_account import Credentials
 import gspread
 import urllib.parse
 import hashlib
+import requests
 
 # ===== Настройки и логирование =====
 logging.basicConfig(level=logging.INFO)
@@ -134,7 +135,7 @@ def add_to_favorites():
         chat_id = data.get('chat_id')
         rose_data = data.get('rose')
         
-        if not chat_id or not rose_
+        if not chat_id or not rose_data:
             return {'error': 'Не переданы необходимые данные'}, 400
             
         # Добавляем в Google Sheets
@@ -309,7 +310,7 @@ def handle_info(call):
         chat_id = call.message.chat.id
         
         # Отправляем информацию
-        if "care" in call.
+        if "care" in call.data:
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
@@ -340,25 +341,29 @@ def handle_favorite(call):
         chat_id = call.message.chat.id
         
         # Добавляем в избранное через API
-        response = requests.post(
-            f"{WEB_APP_URL}/favorites/add",
-            json={
-                'chat_id': chat_id,
-                'first_name': call.from_user.first_name,
-                'username': call.from_user.username,
-                'rose': {
-                    'name': rose.get('Название', ''),
-                    'description': rose.get('Описание', ''),
-                    'photo': rose.get('photo', ''),
-                    'care': rose.get('Уход', ''),
-                    'history': rose.get('История', '')
+        try:
+            response = requests.post(
+                f"https://{DOMAIN}/app/favorites/add",
+                json={
+                    'chat_id': chat_id,
+                    'first_name': call.from_user.first_name,
+                    'username': call.from_user.username,
+                    'rose': {
+                        'name': rose.get('Название', ''),
+                        'description': rose.get('Описание', ''),
+                        'photo': rose.get('photo', ''),
+                        'care': rose.get('Уход', ''),
+                        'history': rose.get('История', '')
+                    }
                 }
-            }
-        )
-        
-        if response.status_code == 200:
-            bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
-        else:
+            )
+            
+            if response.status_code == 200:
+                bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
+            else:
+                bot.answer_callback_query(call.id, "❌ Ошибка при добавлении в избранное")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при добавлении в избранное: {e}")
             bot.answer_callback_query(call.id, "❌ Ошибка при добавлении в избранное")
             
     except Exception as e:
