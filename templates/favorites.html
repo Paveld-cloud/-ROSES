@@ -1,126 +1,94 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Избранное</title>
-    <link rel="stylesheet" href="/static/assets/style.css">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⭐️ Избранные розы</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fdfaf6;
+      margin: 0;
+      padding: 1rem;
+    }
+    h1 {
+      text-align: center;
+      color: #d6336c;
+    }
+    .rose-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .rose-card {
+      background: #fff;
+      border-radius: 15px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      overflow: hidden;
+      transition: transform 0.2s;
+    }
+    .rose-card:hover {
+      transform: scale(1.02);
+    }
+    .rose-card img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+    }
+    .rose-card .content {
+      padding: 1rem;
+    }
+    .rose-card h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      color: #d6336c;
+    }
+    .rose-card p {
+      font-size: 0.9rem;
+      color: #555;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>⭐ Избранное</h1>
-            <button id="refreshBtn" class="refresh-btn">🔄 Обновить</button>
-        </header>
+  <h1>⭐️ Ваши избранные розы</h1>
+  <div class="rose-list" id="roseList"></div>
 
-        <main>
-            <div id="favoritesList" class="roses-grid">
-                <div class="loading">Загрузка избранного...</div>
+  <script>
+    async function fetchFavorites() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const chat_id = urlParams.get("chat_id");
+      if (!chat_id) {
+        document.getElementById("roseList").innerHTML = '<p>❌ ID пользователя не указан.</p>';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/app/favorites?chat_id=${chat_id}`);
+        const data = await res.json();
+
+        if (!data.favorites || data.favorites.length === 0) {
+          document.getElementById("roseList").innerHTML = '<p>❌ Пока нет избранных роз.</p>';
+          return;
+        }
+
+        const html = data.favorites.map(rose => `
+          <div class="rose-card">
+            <img src="${rose.photo}" alt="${rose.name}">
+            <div class="content">
+              <h2>${rose.name}</h2>
+              <p>${rose.description.substring(0, 120)}...</p>
             </div>
-        </main>
-    </div>
+          </div>
+        `).join('');
 
-    <script src="/static/assets/script.js"></script>
-    <script>
-        // Инициализация Telegram Web App
-        let tg = window.Telegram.WebApp;
+        document.getElementById("roseList").innerHTML = html;
+      } catch (err) {
+        document.getElementById("roseList").innerHTML = '<p>❌ Ошибка загрузки данных</p>';
+        console.error(err);
+      }
+    }
 
-        // DOM элементы
-        const favoritesList = document.getElementById('favoritesList');
-
-        // Функция загрузки избранного
-        async function loadFavorites(chatId) {
-            showLoading(favoritesList);
-            try {
-                const response = await fetch(`/app/favorites?chat_id=${chatId}`);
-                const data = await response.json();
-                
-                if (data.favorites) {
-                    displayFavorites(data.favorites, favoritesList);
-                } else {
-                    showError(favoritesList, 'Ошибка загрузки избранного: ' + (data.error || 'Неизвестная ошибка'));
-                }
-            } catch (error) {
-                console.error('Ошибка:', error);
-                showError(favoritesList, 'Ошибка загрузки данных: ' + error.message);
-            }
-        }
-
-        function showLoading(container) {
-            container.innerHTML = '<div class="loading">Загрузка избранного...</div>';
-        }
-
-        function showError(container, message) {
-            container.innerHTML = `<div class="error">${message}</div>`;
-        }
-
-        function displayFavorites(favorites, container) {
-            if (favorites.length === 0) {
-                container.innerHTML = '<div class="empty-state">💔 У вас нет избранных роз</div>';
-                return;
-            }
-            
-            container.innerHTML = favorites.map(rose => `
-                <div class="rose-card">
-                    ${rose.photo ? `<img src="${rose.photo}" alt="${rose.name}" class="rose-image" onerror="this.style.display='none'">` : ''}
-                    <div class="rose-info">
-                        <h3 class="rose-name">${rose.name}</h3>
-                        <p class="rose-description">${truncateText(rose.description, 100)}</p>
-                        <div class="rose-actions">
-                            <button class="btn btn-care" onclick="showCare('${rose.id}')">🪴 Уход</button>
-                            <button class="btn btn-history" onclick="showHistory('${rose.id}')">📜 История</button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function showCare(roseId) {
-            // Здесь можно реализовать показ деталей ухода
-            tg.showAlert('🪴 Функция ухода будет реализована позже');
-        }
-
-        function showHistory(roseId) {
-            // Здесь можно реализовать показ истории
-            tg.showAlert('📜 Функция истории будет реализована позже');
-        }
-
-        function truncateText(text, maxLength) {
-            if (text.length <= maxLength) return text;
-            return text.substring(0, maxLength) + '...';
-        }
-
-        // Глобальные функции для доступа из HTML
-        window.showCare = showCare;
-        window.showHistory = showHistory;
-
-        // Загрузка избранного при открытии
-        document.addEventListener('DOMContentLoaded', function() {
-            // Получаем ID чата из Telegram Web App
-            const tg = window.Telegram.WebApp;
-            tg.expand();
-            
-            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                const chatId = tg.initDataUnsafe.user.id;
-                loadFavorites(chatId);
-                
-                // Обработчик кнопки обновления
-                document.getElementById('refreshBtn').addEventListener('click', function() {
-                    loadFavorites(chatId);
-                });
-            } else {
-                // Если не удалось получить из initData, попробуем из URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const chatId = urlParams.get('chat_id');
-                if (chatId) {
-                    loadFavorites(chatId);
-                } else {
-                    document.getElementById('favoritesList').innerHTML = 
-                        '<div class="error">Не удалось получить данные пользователя</div>';
-                }
-            }
-        });
-    </script>
+    fetchFavorites();
+  </script>
 </body>
 </html>
