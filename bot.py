@@ -8,6 +8,7 @@ from datetime import datetime
 from google.oauth2.service_account import Credentials
 import gspread
 import urllib.parse
+import hashlib
 
 # ===== Настройки и логирование =====
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +42,8 @@ user_search_results = {}
 user_favorites = {}
 # Храним ID последних сообщений с информацией для каждого пользователя
 user_last_info_messages = {}
+# Словарь для хранения хэшей названий роз
+rose_name_hashes = {}
 
 def load_roses():
     global cached_roses
@@ -87,6 +90,18 @@ def webhook():
     update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
     bot.process_new_updates([update])
     return "", 200
+
+# ===== Функция для создания короткого хэша названия розы =====
+def get_rose_hash(rose_name):
+    """Создает короткий хэш названия розы для использования в callback данных"""
+    hash_object = hashlib.md5(rose_name.encode())
+    hash_hex = hash_object.hexdigest()[:10]  # Берем только первые 10 символов
+    rose_name_hashes[hash_hex] = rose_name  # Сохраняем связь хэш-название
+    return hash_hex
+
+def get_rose_name_by_hash(hash_key):
+    """Получает название розы по хэшу"""
+    return rose_name_hashes.get(hash_key, "")
 
 # ===== Команды =====
 @bot.message_handler(commands=["start"])
@@ -166,10 +181,11 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
         markup = telebot.types.InlineKeyboardMarkup()
         
         if from_favorites:
-            name_encoded = urllib.parse.quote_plus(rose.get("Название", ""))
+            # Используем хэш вместо полного названия для избежания превышения лимита
+            rose_hash = get_rose_hash(rose.get("Название", ""))
             markup.row(
-                telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"showcare_{name_encoded}"),
-                telebot.types.InlineKeyboardButton("📜 История", callback_data=f"showhist_{name_encoded}")
+                telebot.types.InlineKeyboardButton("🪴 Уход", callback_data=f"showcare_{rose_hash}"),
+                telebot.types.InlineKeyboardButton("📜 История", callback_data=f"showhist_{rose_hash}")
             )
         else:
             markup.row(
@@ -246,7 +262,7 @@ def handle_info(call):
         delete_previous_info_message(user_id, chat_id)
         
         # Отправляем новое сообщение и сохраняем его ID
-        if "care" in call.data:  # Исправлено: была синтаксическая ошибка
+        if "care" in call.data:
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
@@ -308,21 +324,20 @@ def handle_favorite(call):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("showcare_") or c.data.startswith("showhist_"))
 def handle_fav_details(call):
     try:
-        prefix, encoded_name = call.data.split("_", 1)
-        name = urllib.parse.unquote_plus(encoded_name)
+        prefix, rose_hash = call.data.split("_", 1)
+        rose_name = get_rose_name_by_hash(rose_hash)
         uid = call.from_user.id
         chat_id = call.message.chat.id
         roses = user_favorites.get(uid, [])
         
-        logger.info(f"📥 Запрос деталей избранного от пользователя {uid}, роза: {name}")
-        logger.info(f"📊 Доступные избранные розы: {[r.get('Название') for r in roses]}")
+        logger.info(f"📥 Запрос деталей избранного от пользователя {uid}, роза hash: {rose_hash}")
         
         # Удаляем предыдущее информационное сообщение
         delete_previous_info_message(uid, chat_id)
         
         found = False
         for rose in roses:
-            if rose["Название"] == name:
+            if rose["Название"] == rose_name:
                 field = "Уход" if prefix == "showcare" else "История"
                 info_text = f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}"
                 
@@ -336,7 +351,7 @@ def handle_fav_details(call):
                 
         if not found:
             bot.answer_callback_query(call.id, "❌ Роза не найдена в избранном")
-            logger.warning(f"⚠️ Роза '{name}' не найдена в избранном пользователя {uid}")
+            logger.warning(f"⚠️ Роза с hash '{rose_hash}' не найдена в избранном пользователя {uid}")
             
     except Exception as e:
         logger.error(f"❌ Ошибка при показе избранного: {e}")
