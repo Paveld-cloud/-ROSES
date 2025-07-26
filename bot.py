@@ -28,7 +28,6 @@ CREDS_JSON = json.loads(get_env_var("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # ===== Авторизация Google Sheets =====
-# Исправлено: убран лишний пробел в scope
 creds = Credentials.from_service_account_info(CREDS_JSON, scopes=["https://www.googleapis.com/auth/spreadsheets"])
 gs = gspread.authorize(creds)
 spreadsheet = gs.open_by_url(SPREADSHEET_URL)
@@ -39,7 +38,6 @@ sheet_favorites = spreadsheet.worksheet("Избранное")
 # ===== Кэш =====
 cached_roses = []
 user_search_results = {}
-# Убран user_favorites - теперь все через API
 
 # ===== Flask приложение =====
 app = Flask(__name__, 
@@ -136,7 +134,7 @@ def add_to_favorites():
         chat_id = data.get('chat_id')
         rose_data = data.get('rose')
         
-        if not chat_id or not rose_data:
+        if not chat_id or not rose_
             return {'error': 'Не переданы необходимые данные'}, 400
             
         # Добавляем в Google Sheets
@@ -257,6 +255,11 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None):
             telebot.types.InlineKeyboardButton("📜 История", callback_data=f"hist_{user_id}_{idx}")
         )
         
+        # Добавляем кнопку "Добавить в избранное"
+        markup.add(
+            telebot.types.InlineKeyboardButton("⭐ В избранное", callback_data=f"fav_{user_id}_{idx}")
+        )
+        
         if photo:
             # Проверяем, что photo - валидный URL
             if isinstance(photo, str) and (photo.startswith('http://') or photo.startswith('https://')):
@@ -306,7 +309,7 @@ def handle_info(call):
         chat_id = call.message.chat.id
         
         # Отправляем информацию
-        if "care" in call.data:
+        if "care" in call.
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
@@ -318,6 +321,50 @@ def handle_info(call):
         logger.error(f"❌ Ошибка в handle_info: {e}")
         try:
             bot.answer_callback_query(call.id, "❌ Ошибка при получении информации")
+        except:
+            pass
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("fav_"))
+def handle_favorite(call):
+    try:
+        _, uid, idx = call.data.split("_")
+        user_id = int(uid)
+        user_results = user_search_results.get(user_id, [])
+        
+        # Проверка на выход за границы массива
+        if int(idx) >= len(user_results):
+            bot.answer_callback_query(call.id, "❌ Данные устарели, попробуйте поиск заново.")
+            return
+            
+        rose = user_results[int(idx)]
+        chat_id = call.message.chat.id
+        
+        # Добавляем в избранное через API
+        response = requests.post(
+            f"{WEB_APP_URL}/favorites/add",
+            json={
+                'chat_id': chat_id,
+                'first_name': call.from_user.first_name,
+                'username': call.from_user.username,
+                'rose': {
+                    'name': rose.get('Название', ''),
+                    'description': rose.get('Описание', ''),
+                    'photo': rose.get('photo', ''),
+                    'care': rose.get('Уход', ''),
+                    'history': rose.get('История', '')
+                }
+            }
+        )
+        
+        if response.status_code == 200:
+            bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
+        else:
+            bot.answer_callback_query(call.id, "❌ Ошибка при добавлении в избранное")
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка в handle_favorite: {e}")
+        try:
+            bot.answer_callback_query(call.id, "❌ Ошибка при добавлении в избранное")
         except:
             pass
 
