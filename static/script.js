@@ -22,37 +22,6 @@ async function loadFavorites(chatId) {
     }
 }
 
-// Функция добавления в избранное
-async function addToFavorites(chatId, roseData) {
-    try {
-        const response = await fetch('/app/favorites/add', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                chat_id: chatId,
-                first_name: tg.initDataUnsafe.user.first_name || '',
-                username: tg.initDataUnsafe.user.username || '',
-                rose: roseData
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            tg.showAlert('✅ Добавлено в избранное!');
-            // Обновляем список
-            loadFavorites(chatId);
-        } else {
-            tg.showAlert('❌ Ошибка: ' + (data.error || 'Неизвестная ошибка'));
-        }
-    } catch (error) {
-        console.error('Ошибка:', error);
-        tg.showAlert('❌ Ошибка добавления в избранное');
-    }
-}
-
 function showLoading(container) {
     container.innerHTML = '<div class="loading">Загрузка избранного...</div>';
 }
@@ -100,4 +69,30 @@ function truncateText(text, maxLength) {
 // Глобальные функции для доступа из HTML
 window.showCare = showCare;
 window.showHistory = showHistory;
-window.addToFavorites = addToFavorites;
+
+// Загрузка избранного при открытии
+document.addEventListener('DOMContentLoaded', function() {
+    // Получаем ID чата из Telegram Web App
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    
+    if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        const chatId = tg.initDataUnsafe.user.id;
+        loadFavorites(chatId);
+        
+        // Обработчик кнопки обновления
+        document.getElementById('refreshBtn').addEventListener('click', function() {
+            loadFavorites(chatId);
+        });
+    } else {
+        // Если не удалось получить из initData, попробуем из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const chatId = urlParams.get('chat_id');
+        if (chatId) {
+            loadFavorites(chatId);
+        } else {
+            document.getElementById('favoritesList').innerHTML = 
+                '<div class="error">Не удалось получить данные пользователя</div>';
+        }
+    }
+});
