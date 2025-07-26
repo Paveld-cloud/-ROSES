@@ -44,6 +44,8 @@ user_favorites = {}
 user_last_info_messages = {}
 # Словарь для хранения хэшей названий роз
 rose_name_hashes = {}
+# Храним ID сообщений с результатами поиска для каждого пользователя
+user_search_result_messages = {}
 
 def load_roses():
     global cached_roses
@@ -103,6 +105,19 @@ def get_rose_name_by_hash(hash_key):
     """Получает название розы по хэшу"""
     return rose_name_hashes.get(hash_key, "")
 
+# ===== Функция для удаления сообщений с результатами поиска =====
+def delete_user_search_results(user_id, chat_id):
+    """Удаляет все сообщения с результатами поиска пользователя"""
+    if user_id in user_search_result_messages:
+        for msg_id in user_search_result_messages[user_id]:
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка удаления сообщения поиска {msg_id}: {e}")
+        # Очищаем список сообщений поиска
+        del user_search_result_messages[user_id]
+        logger.info(f"🗑️ Удалены все сообщения поиска для пользователя {user_id}")
+
 # ===== Команды =====
 @bot.message_handler(commands=["start"])
 def start(message):
@@ -134,6 +149,14 @@ def show_favorites(message):
     try:
         logger.info(f"📥 Пользователь {message.from_user.id} открыл избранное")
         user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        # Удаляем все сообщения с результатами поиска
+        delete_user_search_results(user_id, chat_id)
+        
+        # Удаляем предыдущее информационное сообщение
+        delete_previous_info_message(user_id, chat_id)
+        
         roses = user_favorites.get(user_id, [])
         
         logger.info(f"📊 Найдено избранных роз для пользователя {user_id}: {len(roses)}")
@@ -163,11 +186,28 @@ def handle_query(message):
         if not results:
             bot.send_message(message.chat.id, "❌ Ничего не найдено.")
             return
+            
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
         # Ограничиваем количество результатов для предотвращения переполнения памяти
-        user_search_results[message.from_user.id] = results[:10]
+        user_search_results[user_id] = results[:10]
+        
+        # Создаем список для хранения ID сообщений поиска
+        if user_id not in user_search_result_messages:
+            user_search_result_messages[user_id] = []
+        
+        # Отправляем сообщение с количеством найденных результатов
+        result_msg = bot.send_message(chat_id, f"🔍 Найдено результатов: {len(results[:5])}")
+        user_search_result_messages[user_id].append(result_msg.message_id)
+        
         for idx, rose in enumerate(results[:5]):
-            send_rose_card(message.chat.id, rose, message.from_user.id, idx)
-            log_search(message, rose["Название"])
+            msg_id = send_rose_card(message.chat.id, rose, message.from_user.id, idx)
+            if msg_id:
+                user_search_result_messages[user_id].append(msg_id)
+                
+        log_search(message, results[0]["Название"])
+        
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_query: {e}")
         bot.send_message(message.chat.id, "❌ Произошла ошибка при поиске.")
@@ -200,21 +240,25 @@ def send_rose_card(chat_id, rose, user_id=None, idx=None, from_favorites=False):
             # Проверяем, что photo - валидный URL
             if isinstance(photo, str) and (photo.startswith('http://') or photo.startswith('https://')):
                 logger.info(f"📷 Отправка фото: {photo}")
-                bot.send_photo(chat_id, photo, caption=caption, parse_mode="HTML", reply_markup=markup)
+                msg = bot.send_photo(chat_id, photo, caption=caption, parse_mode="HTML", reply_markup=markup)
+                return msg.message_id
             else:
                 logger.warning(f"⚠️ Невалидный URL фото: {photo}")
-                bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=markup)
+                msg = bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=markup)
+                return msg.message_id
         else:
             logger.info("📝 Отправка без фото")
-            bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=markup)
+            msg = bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=markup)
+            return msg.message_id
             
     except Exception as e:
         logger.error(f"❌ Ошибка в send_rose_card: {e}")
         logger.error(f"❌ Данные розы: {rose}")
         try:
-            bot.send_message(chat_id, "❌ Ошибка при отправке карточки розы.")
+            error_msg = bot.send_message(chat_id, "❌ Ошибка при отправке карточки розы.")
+            return error_msg.message_id
         except:
-            pass
+            return None
 
 def log_search(message, rose_name):
     try:
@@ -262,7 +306,7 @@ def handle_info(call):
         delete_previous_info_message(user_id, chat_id)
         
         # Отправляем новое сообщение и сохраняем его ID
-        if "care" in call.data:
+        if "care" in call.
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
