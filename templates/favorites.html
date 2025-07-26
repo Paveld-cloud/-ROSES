@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Избранное</title>
+    <link rel="stylesheet" href="/static/assets/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⭐ Избранное</h1>
+        </header>
+
+        <main>
+            <div id="favoritesList" class="roses-grid">
+                <div class="loading">Загрузка избранного...</div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/assets/script.js"></script>
+    <script>
+        // Загрузка избранного при открытии
+        document.addEventListener('DOMContentLoaded', function() {
+            // Получаем ID пользователя из Telegram Web App
+            const tg = window.Telegram.WebApp;
+            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                const userId = tg.initDataUnsafe.user.id;
+                loadFavorites(userId);
+            } else {
+                document.getElementById('favoritesList').innerHTML = 
+                    '<div class="error">Не удалось получить данные пользователя</div>';
+            }
+        });
+    </script>
+</body>
+</html>
