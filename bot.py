@@ -39,6 +39,8 @@ sheet_favorites = spreadsheet.worksheet("Избранное")
 cached_roses = []
 user_search_results = {}
 user_favorites = {}
+# Храним ID последних сообщений с информацией для каждого пользователя
+user_last_info_messages = {}
 
 def load_roses():
     global cached_roses
@@ -191,6 +193,20 @@ def log_search(message, rose_name):
     except Exception as e:
         logger.warning(f"⚠️ Ошибка записи поиска: {e}")
 
+# ===== Функция для удаления предыдущего информационного сообщения =====
+def delete_previous_info_message(user_id, chat_id):
+    """Удаляет предыдущее информационное сообщение пользователя"""
+    if user_id in user_last_info_messages:
+        try:
+            msg_id = user_last_info_messages[user_id]
+            bot.delete_message(chat_id, msg_id)
+            del user_last_info_messages[user_id]
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка удаления сообщения: {e}")
+            # Удаляем из кэша в любом случае
+            if user_id in user_last_info_messages:
+                del user_last_info_messages[user_id]
+
 # ===== Обработка колбэков =====
 @bot.callback_query_handler(func=lambda c: c.data.startswith("care_") or c.data.startswith("hist_"))
 def handle_info(call):
@@ -204,10 +220,23 @@ def handle_info(call):
             return
             
         rose = user_results[int(idx)]
+        user_id = call.from_user.id
+        chat_id = call.message.chat.id
+        
+        # Удаляем предыдущее информационное сообщение
+        delete_previous_info_message(user_id, chat_id)
+        
+        # Отправляем новое сообщение и сохраняем его ID
         if "care" in call.data:
-            bot.send_message(call.message.chat.id, f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}")
+            info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
-            bot.send_message(call.message.chat.id, f"📜 История:\n{rose.get('История', 'Нет данных')}")
+            info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
+            
+        info_message = bot.send_message(chat_id, info_text)
+        user_last_info_messages[user_id] = info_message.message_id
+        
+        bot.answer_callback_query(call.id, "✅ Информация загружена")
+        
     except Exception as e:
         logger.error(f"❌ Ошибка в handle_info: {e}")
         try:
@@ -263,11 +292,22 @@ def handle_fav_details(call):
         prefix, encoded_name = call.data.split("_", 1)
         name = urllib.parse.unquote_plus(encoded_name)
         uid = call.from_user.id
+        chat_id = call.message.chat.id
         roses = user_favorites.get(uid, [])
+        
+        # Удаляем предыдущее информационное сообщение
+        delete_previous_info_message(uid, chat_id)
+        
         for rose in roses:
             if rose["Название"] == name:
                 field = "Уход" if prefix == "showcare" else "История"
-                bot.send_message(call.message.chat.id, f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}")
+                info_text = f"{'🪴' if field == 'Уход' else '📜'} {field}:\n{rose.get(field, 'Нет данных')}"
+                
+                # Отправляем новое сообщение и сохраняем его ID
+                info_message = bot.send_message(chat_id, info_text)
+                user_last_info_messages[uid] = info_message.message_id
+                
+                bot.answer_callback_query(call.id, "✅ Информация загружена")
                 return
         bot.answer_callback_query(call.id, "❌ Роза не найдена")
     except Exception as e:
