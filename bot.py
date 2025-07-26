@@ -114,8 +114,8 @@ def get_user_favorites():
                             'name': str(row.get('Название', '')).strip(),
                             'description': str(row.get('Описание', '')).strip(),
                             'photo': str(row.get('photo', '')).strip(),
-                            'care': str(row.get('Уход', '')).strip(),
-                            'history': str(row.get('История', '')).strip()
+                            'care': str(rose.get('Уход', '')).strip(),
+                            'history': str(rose.get('История', '')).strip()
                         })
                 except Exception:
                     continue
@@ -135,7 +135,7 @@ def add_to_favorites():
         chat_id = data.get('chat_id')
         rose_data = data.get('rose')
         
-        if not chat_id or not rose_data:
+        if not chat_id or not rose_
             return {'error': 'Не переданы необходимые данные'}, 400
             
         # Добавляем в Google Sheets
@@ -310,7 +310,7 @@ def handle_info(call):
         chat_id = call.message.chat.id
         
         # Отправляем информацию
-        if "care" in call.data:
+        if "care" in call.
             info_text = f"🪴 Уход:\n{rose.get('Уход', 'Нет данных')}"
         else:
             info_text = f"📜 История:\n{rose.get('История', 'Нет данных')}"
@@ -341,29 +341,25 @@ def handle_favorite(call):
         chat_id = call.message.chat.id
         
         # Добавляем в избранное через API
-        try:
-            response = requests.post(
-                f"https://{DOMAIN}/app/favorites/add",
-                json={
-                    'chat_id': chat_id,
-                    'first_name': call.from_user.first_name,
-                    'username': call.from_user.username,
-                    'rose': {
-                        'name': rose.get('Название', ''),
-                        'description': rose.get('Описание', ''),
-                        'photo': rose.get('photo', ''),
-                        'care': rose.get('Уход', ''),
-                        'history': rose.get('История', '')
-                    }
+        response = requests.post(
+            f"{WEB_APP_URL}/favorites/add",
+            json={
+                'chat_id': chat_id,
+                'first_name': call.from_user.first_name,
+                'username': call.from_user.username,
+                'rose': {
+                    'name': rose.get('Название', ''),
+                    'description': rose.get('Описание', ''),
+                    'photo': rose.get('photo', ''),
+                    'care': rose.get('Уход', ''),
+                    'history': rose.get('История', '')
                 }
-            )
-            
-            if response.status_code == 200:
-                bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
-            else:
-                bot.answer_callback_query(call.id, "❌ Ошибка при добавлении в избранное")
-        except Exception as e:
-            logger.error(f"❌ Ошибка при добавлении в избранное: {e}")
+            }
+        )
+        
+        if response.status_code == 200:
+            bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
+        else:
             bot.answer_callback_query(call.id, "❌ Ошибка при добавлении в избранное")
             
     except Exception as e:
