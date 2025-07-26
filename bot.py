@@ -58,18 +58,32 @@ def load_roses():
 def load_favorites():
     try:
         all_rows = sheet_favorites.get_all_records()
+        logger.info(f"📊 Загружено строк избранного: {len(all_rows)}")
+        
+        # Очищаем старые данные
+        user_favorites.clear()
+        
         for row in all_rows:
-            uid = int(row['ID'])
-            rose = {
-                "Название": row['Название'],
-                "Описание": row['Описание'],
-                "photo": row['photo'],
-                "Уход": row['Уход'],
-                "История": row['История']
-            }
-            user_favorites.setdefault(uid, []).append(rose)
+            try:
+                # Проверяем, что это не заголовок
+                if str(row.get('ID', '')).lower().strip() in ['id', 'user_id', '']:
+                    continue
+                    
+                uid = int(row['ID'])
+                rose = {
+                    "Название": str(row.get('Название', '')).strip() if row.get('Название') else 'Без названия',
+                    "Описание": str(row.get('Описание', '')).strip() if row.get('Описание') else '',
+                    "photo": str(row.get('photo', '')).strip() if row.get('photo') else '',
+                    "Уход": str(row.get('Уход', '')).strip() if row.get('Уход') else '',
+                    "История": str(row.get('История', '')).strip() if row.get('История') else ''
+                }
+                user_favorites.setdefault(uid, []).append(rose)
+            except Exception as row_error:
+                logger.warning(f"⚠️ Ошибка обработки строки избранного: {row_error}")
+                continue
+                
         logger.info("✅ Избранное загружено")
-        logger.info(f"📊 Загружено избранных записей: {len(all_rows)}")
+        logger.info(f"📊 Загружено избранных записей для пользователей: {list(user_favorites.keys())}")
     except Exception as e:
         logger.error(f"❌ Ошибка загрузки избранного: {e}")
 
@@ -112,7 +126,12 @@ def web_app():
 def get_user_favorites(user_id):
     """API endpoint для получения избранных роз пользователя"""
     try:
+        logger.info(f"📥 Запрос избранного для пользователя {user_id}")
+        logger.info(f"📊 Доступные пользователи в избранном: {list(user_favorites.keys())}")
+        
         favorites = user_favorites.get(user_id, [])
+        logger.info(f"📊 Найдено избранных роз для пользователя {user_id}: {len(favorites)}")
+        
         favorites_data = []
         for rose in favorites:
             favorites_data.append({
@@ -410,6 +429,8 @@ def handle_favorite(call):
                 str(rose.get("История", "")).strip()
             ])
             bot.answer_callback_query(call.id, "✅ Добавлено в избранное")
+            # Обновляем кэш избранного
+            load_favorites()
         except Exception as e:
             logger.error(f"❌ Ошибка записи в избранное: {e}")
             bot.answer_callback_query(call.id, "❌ Ошибка при сохранении")
