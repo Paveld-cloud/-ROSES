@@ -1,14 +1,6 @@
 // Инициализация Telegram Web App
 let tg = window.Telegram.WebApp;
 
-// Глобальные переменные
-let currentUserId = null;
-
-// Получение ID пользователя из Telegram
-if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-    currentUserId = tg.initDataUnsafe.user.id;
-}
-
 // DOM элементы
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
