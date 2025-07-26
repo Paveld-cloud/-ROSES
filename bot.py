@@ -188,7 +188,7 @@ def start(message):
         markup.add("🔎 Поиск")
         markup.row("📞 Связаться")
         # Добавляем кнопку для мини-приложения
-        web_app_btn = telebot.types.KeyboardButton("⭐ Избранное", web_app=telebot.types.WebAppInfo(WEB_APP_URL))
+        web_app_btn = telebot.types.KeyboardButton("⭐ Избранное", web_app=telebot.types.WebAppInfo(f"{WEB_APP_URL}?chat_id={message.chat.id}"))
         markup.add(web_app_btn)
         
         bot.send_message(message.chat.id, 
