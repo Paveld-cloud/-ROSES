@@ -11,6 +11,9 @@
     <div class="container">
         <header>
             <h1>⭐ Избранное</h1>
+            <div class="header-actions">
+                <button id="refreshBtn" class="refresh-btn">🔄 Обновить</button>
+            </div>
         </header>
 
         <main>
@@ -22,25 +25,23 @@
 
     <script src="/static/assets/script.js"></script>
     <script>
-        // Загрузка избранного при открытии
+        // Инициализация при загрузке страницы
         document.addEventListener('DOMContentLoaded', function() {
-            // Получаем ID пользователя из Telegram Web App
             const tg = window.Telegram.WebApp;
             tg.expand();
+            tg.enableClosingConfirmation();
             
             if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
                 const chatId = tg.initDataUnsafe.user.id;
                 loadFavorites(chatId);
-            } else {
-                // Если не удалось получить из initData, попробуем из URL
-                const urlParams = new URLSearchParams(window.location.search);
-                const chatId = urlParams.get('chat_id');
-                if (chatId) {
+                
+                // Обработчик кнопки обновления
+                document.getElementById('refreshBtn').addEventListener('click', function() {
                     loadFavorites(chatId);
-                } else {
-                    document.getElementById('favoritesList').innerHTML = 
-                        '<div class="error">Не удалось получить данные пользователя</div>';
-                }
+                });
+            } else {
+                document.getElementById('favoritesList').innerHTML = 
+                    '<div class="error">Не удалось получить данные пользователя</div>';
             }
         });
     </script>
