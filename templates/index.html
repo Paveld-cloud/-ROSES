@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Каталог роз</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌹 Каталог роз</h1>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Поиск роз...">
+                <button id="searchBtn">🔍</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="catalog">Каталог</button>
+                <button class="tab-btn" data-tab="favorites">Избранное</button>
+            </div>
+
+            <div id="catalog" class="tab-content active">
+                <div id="rosesList" class="roses-grid">
+                    <!-- Розы будут загружены сюда -->
+                </div>
+            </div>
+
+            <div id="favorites" class="tab-content">
+                <div id="favoritesList" class="roses-grid">
+                    <!-- Избранные розы будут загружены сюда -->
+                </div>
+            </div>
+        </main>
+
+        <div id="roseModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <div id="modalBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
