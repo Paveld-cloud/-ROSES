@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Избранное</title>
     <link rel="stylesheet" href="/static/assets/style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div class="container">
@@ -25,12 +26,21 @@
         document.addEventListener('DOMContentLoaded', function() {
             // Получаем ID пользователя из Telegram Web App
             const tg = window.Telegram.WebApp;
+            tg.expand();
+            
             if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                const userId = tg.initDataUnsafe.user.id;
-                loadFavorites(userId);
+                const chatId = tg.initDataUnsafe.user.id;
+                loadFavorites(chatId);
             } else {
-                document.getElementById('favoritesList').innerHTML = 
-                    '<div class="error">Не удалось получить данные пользователя</div>';
+                // Если не удалось получить из initData, попробуем из URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const chatId = urlParams.get('chat_id');
+                if (chatId) {
+                    loadFavorites(chatId);
+                } else {
+                    document.getElementById('favoritesList').innerHTML = 
+                        '<div class="error">Не удалось получить данные пользователя</div>';
+                }
             }
         });
     </script>
